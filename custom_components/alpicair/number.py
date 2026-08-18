@@ -16,8 +16,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class AlpicAirComfortSetpointNumber(CoordinatorEntity, NumberEntity):
-    """Slider to change the Comfort mode target temperature."""
-
     _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = "°C"
     _attr_native_min_value = MIN_TEMP

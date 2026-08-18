@@ -45,7 +45,6 @@ class _Base(CoordinatorEntity, SensorEntity):
 
 
 class AlpicAirModeSensor(_Base):
-    _attr_translation_key = "system_mode"
     _attr_icon = "mdi:fan"
 
     def __init__(self, coordinator, entry):

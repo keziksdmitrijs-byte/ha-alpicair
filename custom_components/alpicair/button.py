@@ -50,8 +50,6 @@ class _Base(CoordinatorEntity, ButtonEntity):
 
 
 class AlpicAirModeButton(_Base):
-    """One button per system mode value (register 1)."""
-
     def __init__(self, coordinator, entry: ConfigEntry, key: str, value: int, name: str, icon: str) -> None:
         super().__init__(coordinator, entry)
         self._value = value
