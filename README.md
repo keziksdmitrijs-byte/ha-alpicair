@@ -1,32 +1,71 @@
-# AlpicAir Ventilation Unit — v0.6.0
+# AlpicAir Ventilation Unit
 
-Added editable airflow presets and Night Cooling configuration.
+HACS-интеграция Home Assistant для рекуператоров AlpicAir, произведённых SALDA на контроллере MCB 1.27, через Modbus TCP.
 
-## Editable airflow presets
+## Версия 0.5.0
 
-The existing read-only measured flow sensors (Input Registers 77-86) remain unchanged. New slider entities write to the actual configurable Holding Registers 450-459:
+### Ползунки расхода воздуха
 
-- Supply 1-4: Building protection, Economy, Comfort, Boost — 450-453.
-- Extract 1-4: Building protection, Economy, Comfort, Boost — 456-459.
+Добавлены восемь изменяемых ползунков для настройки производительности вентиляторов по режимам:
 
-The registers use a 0.1% scale: 300 = 30%, 500 = 50%, 1000 = 100%. The sliders display 0-100% and convert automatically on write [file:16].
+| Направление | Защита здания | Эконом | Комфорт | Форсаж |
+|---|---:|---:|---:|---:|
+| Приток | 450 | 451 | 452 | 453 |
+| Вытяжка | 456 | 457 | 458 | 459 |
 
-## Editable Night Cooling
+Ползунки отображают 0–100%. Контроллер хранит эти значения с масштабом ×0.1%, поэтому 30% записывается как 300, а 100% — как 1000.
 
-Night Cooling is now fully configurable through `number` entities:
+### Night Cooling
 
-- Start hour/minute — Holding 25/26.
-- Stop hour/minute — Holding 27/28.
-- Extract temperature for start/stop — Holding 29/30, x0.1°C.
-- Outdoor temperature threshold — Holding 31, x0.1°C.
-- Supply temperature setpoint — Holding 32, x0.1°C.
+Полностью настраиваемые параметры ночного охлаждения:
 
-The existing switch controls function enable/disable through Coil 4; the sensor shows whether Night Cooling is currently active via Discrete Input 209 [file:16].
+- Включение/выключение: Coil 4.
+- Час и минута начала: Holding Registers 25–26.
+- Час и минута окончания: Holding Registers 27–28.
+- Температура вытяжки для запуска и остановки: Registers 29–30.
+- Наружная температура для остановки: Register 31.
+- Уставка температуры приточного воздуха: Register 32.
 
-## Other functionality
+Температуры Night Cooling вводятся в °C и автоматически преобразуются в формат ×0.1°C контроллера.
 
-Mode selection, Standby button, target Comfort temperature, air temperatures, measured flow sensors, filter pressure/days, efficiency and decoded alarms remain available.
+### Надёжность опроса
 
-## Installation
+Необязательные расширенные диапазоны (расходы, фильтры, Night Cooling) опрашиваются отдельно. Если конкретный диапазон не поддерживается прошивкой вашего контроллера, соответствующая группа сущностей станет недоступной, но интеграция и базовое управление не прекратят работу.
 
-Install through HACS from `https://github.com/keziksdmitrijs-byte/ha-alpicair`, then restart Home Assistant and add AlpicAir from Settings → Devices & Services.
+## Установка через HACS
+
+1. HACS → Integrations → меню с тремя точками → **Custom repositories**.
+2. Добавьте `https://github.com/keziksdmitrijs-byte/ha-alpicair`.
+3. Категория: **Integration**.
+4. Установите **AlpicAir Ventilation Unit**.
+5. Перезапустите Home Assistant.
+6. Настройки → Устройства и службы → Добавить интеграцию → **AlpicAir**.
+7. Укажите IP шлюза, порт (обычно 502) и Slave ID (обычно 1).
+
+## Структура репозитория
+
+```text
+ha-alpicair/
+├── hacs.json
+├── README.md
+└── custom_components/
+    └── alpicair/
+        ├── manifest.json
+        ├── __init__.py
+        ├── config_flow.py
+        ├── coordinator.py
+        ├── const.py
+        ├── number.py
+        ├── sensor.py
+        ├── switch.py
+        ├── button.py
+        ├── select.py
+        ├── strings.json
+        └── translations/
+```
+
+## Важно
+
+Не смешивайте эту HACS-интеграцию со старой ручной YAML-конфигурацией того же рекуператора из `packages/modbus.yaml`. Удалите старые секции `modbus:`, `template:`, `sensor:`, `switch:` и другие дублирующие сущности, иначе возможны конфликты и ошибки конфигурации.
+
+Проект не является официальным продуктом AlpicAir или SALDA. Сверяйте адреса с документацией вашей установки перед записью параметров.
