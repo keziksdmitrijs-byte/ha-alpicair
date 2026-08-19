@@ -1,4 +1,12 @@
-"""Switch platform for AlpicAir boolean coils."""
+"""Switch platform for AlpicAir boolean coils (auxiliary settings only).
+
+Note: operating modes (Building protection / Economy / Comfort / Intensive
+boost) are NOT represented as switches - they live in select.py as a single
+dropdown, and Off lives in button.py as a dedicated button. Putting a
+multi-valued register behind several independent switches was a known
+pitfall in similar community Modbus packages (multiple switches could show
+"on" simultaneously), so it is intentionally avoided here.
+"""
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity

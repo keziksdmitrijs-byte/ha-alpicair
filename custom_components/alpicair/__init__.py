@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN, CONF_SLAVE
 from .coordinator import AlpicAirCoordinator
 
-PLATFORMS = ["sensor", "number", "switch", "button"]
+PLATFORMS = ["sensor", "number", "switch", "button", "select"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
