@@ -1,235 +1,63 @@
-"""DataUpdateCoordinator for the AlpicAir integration."""
+"""Modbus coordinator for AlpicAir ventilation unit."""
 from __future__ import annotations
-
 import logging
 from datetime import timedelta
-
 import pymodbus
 from packaging import version
-
 from pymodbus.client import AsyncModbusTcpClient
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator,UpdateFailed
+from .const import *
+_LOGGER=logging.getLogger(__name__)
 
-from .const import (
-    REG_SYSTEM_MODE,
-    REG_COMFORT_SETPOINT,
-    REG_AIR_FLOW_1_SUPPLY,
-    REG_NIGHT_COOLING_START_HOURS,
-    IR_CURRENT_SYSTEM_STATE,
-    IR_1_SUPPLY_AIR_FLOW,
-    IR_1_EXTRACT_AIR_FLOW,
-    IR_SUPPLY_FILTER_PRESSURE,
-    COIL_DRYNESS_PROTECTION,
-    DI_CRITICAL_ALARM,
-    DI_NIGHT_COOLING_FUNCTION,
-    ALARM_MESSAGES,
-)
-
-_LOGGER = logging.getLogger(__name__)
-
-
-def _device_kwarg_name() -> str:
-    """Return 'device_id' or 'slave' depending on the installed pymodbus version."""
+def _device_kwarg():
     try:
-        if version.parse(pymodbus.__version__) >= version.parse("3.10.0"):
-            return "device_id"
-    except Exception:  # noqa: BLE001
-        pass
-    return "slave"
-
+        return "device_id" if version.parse(pymodbus.__version__)>=version.parse("3.10.0") else "slave"
+    except Exception: return "slave"
 
 class AlpicAirCoordinator(DataUpdateCoordinator):
-    """Polls the AlpicAir/SALDA MCB controller over Modbus TCP."""
-
-    def __init__(self, hass: HomeAssistant, host: str, port: int, slave: int) -> None:
-        super().__init__(
-            hass,
-            _LOGGER,
-            name="alpicair",
-            update_interval=timedelta(seconds=15),
-        )
-        self._host = host
-        self._port = port
-        self._slave = slave
-        self._client = AsyncModbusTcpClient(host=host, port=port)
-        self._device_kwarg = _device_kwarg_name()
-
-    async def _async_update_data(self) -> dict:
-        if not self._client.connected:
-            await self._client.connect()
-        if not self._client.connected:
-            raise UpdateFailed(f"Cannot connect to {self._host}:{self._port}")
-
-        kw = {self._device_kwarg: self._slave}
-
+    def __init__(self,hass:HomeAssistant,host:str,port:int,slave:int):
+        super().__init__(hass,_LOGGER,name=DOMAIN,update_interval=timedelta(seconds=15))
+        self._slave=slave; self._client=AsyncModbusTcpClient(host=host,port=port); self._kw=_device_kwarg()
+    async def _async_update_data(self):
+        if not self._client.connected: await self._client.connect()
+        if not self._client.connected: raise UpdateFailed("Не удалось подключиться к Modbus TCP")
+        kw={self._kw:self._slave}
         try:
-            holding_main = await self._client.read_holding_registers(
-                address=REG_SYSTEM_MODE, count=3, **kw
-            )
-            holding_night_cooling = await self._client.read_holding_registers(
-                address=REG_NIGHT_COOLING_START_HOURS, count=8, **kw
-            )
-            fan_presets_supply = await self._client.read_holding_registers(
-                address=REG_AIR_FLOW_1_SUPPLY, count=4, **kw
-            )
-            fan_presets_extract = await self._client.read_holding_registers(
-                address=REG_AIR_FLOW_1_SUPPLY + 6, count=4, **kw
-            )
-
-            coils = await self._client.read_coils(
-                address=COIL_DRYNESS_PROTECTION, count=6, **kw
-            )
-
-            ir_block1 = await self._client.read_input_registers(
-                address=IR_CURRENT_SYSTEM_STATE, count=31, **kw
-            )
-            ir_supply_flows = await self._client.read_input_registers(
-                address=IR_1_SUPPLY_AIR_FLOW, count=4, **kw
-            )
-            ir_extract_flows = await self._client.read_input_registers(
-                address=IR_1_EXTRACT_AIR_FLOW, count=4, **kw
-            )
-            ir_block2 = await self._client.read_input_registers(
-                address=IR_SUPPLY_FILTER_PRESSURE, count=14, **kw
-            )
-
-            # Discrete inputs: each group is a separate short read, because the
-            # 190-199 range between them is not fully defined and some Modbus
-            # servers (including this SALDA controller) return an exception
-            # response for the whole request if it spans undefined addresses.
-            discretes = await self._client.read_discrete_inputs(
-                address=DI_CRITICAL_ALARM, count=2, **kw
-            )
-            night_cooling_discrete = await self._client.read_discrete_inputs(
-                address=DI_NIGHT_COOLING_FUNCTION, count=1, **kw
-            )
-            alarm_bits = await self._client.read_discrete_inputs(
-                address=1, count=72, **kw
-            )
-        except Exception as err:  # noqa: BLE001
-            raise UpdateFailed(f"Modbus read failed: {err}") from err
-
-        for resp in (
-            holding_main, holding_night_cooling, fan_presets_supply, fan_presets_extract,
-            coils, ir_block1, ir_supply_flows, ir_extract_flows, ir_block2,
-            discretes, night_cooling_discrete, alarm_bits,
-        ):
-            if resp.isError():
-                raise UpdateFailed("Modbus device returned an error response")
-
-        system_mode, comfort_raw, air_flow_percent = holding_main.registers
-        coil_bits = coils.bits
-
-        nc = holding_night_cooling.registers
-        night_cooling_start_hours = nc[0]
-        night_cooling_start_mins = nc[1]
-        night_cooling_stop_hours = nc[2]
-        night_cooling_stop_mins = nc[3]
-        night_cooling_start_extract = self._to_signed16(nc[4]) / 10.0
-        night_cooling_stop_extract = self._to_signed16(nc[5]) / 10.0
-        night_cooling_start_outdoor = self._to_signed16(nc[6]) / 10.0
-        night_cooling_setpoint = self._to_signed16(nc[7]) / 10.0
-
-        ir1 = ir_block1.registers
-        current_system_state = ir1[0]
-        intensive_time_left = ir1[12]
-        required_supply_temp = self._to_signed16(ir1[16]) / 10.0
-        supply_temp = self._to_signed16(ir1[17]) / 10.0
-        extract_temp = self._to_signed16(ir1[18]) / 10.0
-        exhaust_temp = self._to_signed16(ir1[19]) / 10.0
-        outdoor_temp = self._to_signed16(ir1[20]) / 10.0
-        active_alarms_count = ir1[27]
-        filters_days_left = ir1[29]
-
-        ir2 = ir_block2.registers
-        supply_filter_pressure = ir2[0]
-        extract_filter_pressure = ir2[3]
-        heat_exchanger_pressure = ir2[6]
-        heat_transfer_efficiency = ir2[13]
-
-        active_alarm_codes = [i + 1 for i, bit in enumerate(alarm_bits.bits[:72]) if bit]
-        active_alarm_texts = [
-            ALARM_MESSAGES.get(code, f"Неизвестная ошибка #{code}") for code in active_alarm_codes
-        ]
-
-        night_cooling_active = bool(night_cooling_discrete.bits[0])
-
+            main=await self._client.read_holding_registers(address=1,count=6,**kw)
+            nc=await self._client.read_holding_registers(address=25,count=8,**kw)
+            supply_cfg=await self._client.read_holding_registers(address=450,count=4,**kw)
+            extract_cfg=await self._client.read_holding_registers(address=456,count=4,**kw)
+            coils=await self._client.read_coils(address=3,count=6,**kw)
+            ir1=await self._client.read_input_registers(address=1,count=31,**kw)
+            ir_sf=await self._client.read_input_registers(address=77,count=4,**kw)
+            ir_ef=await self._client.read_input_registers(address=83,count=4,**kw)
+            ir2=await self._client.read_input_registers(address=112,count=14,**kw)
+            critical=await self._client.read_discrete_inputs(address=188,count=2,**kw)
+            nc_active=await self._client.read_discrete_inputs(address=209,count=1,**kw)
+            alarms=await self._client.read_discrete_inputs(address=1,count=72,**kw)
+        except Exception as err: raise UpdateFailed(f"Modbus read failed: {err}") from err
+        responses=(main,nc,supply_cfg,extract_cfg,coils,ir1,ir_sf,ir_ef,ir2,critical,nc_active,alarms)
+        if any(r.isError() for r in responses): raise UpdateFailed("Modbus device returned an error response")
+        m=main.registers; n=nc.registers; c=coils.bits; r=ir1.registers; p=ir2.registers
+        signed=lambda x:x-65536 if x>32767 else x
+        codes=[i+1 for i,b in enumerate(alarms.bits[:72]) if b]
         return {
-            "system_mode": system_mode,
-            "comfort_setpoint": comfort_raw / 10.0,
-            "air_flow_percent": air_flow_percent,
-            "intensive_time_left": intensive_time_left,
-            "fan_preset_1_supply": fan_presets_supply.registers[0],
-            "fan_preset_2_supply": fan_presets_supply.registers[1],
-            "fan_preset_3_supply": fan_presets_supply.registers[2],
-            "fan_preset_4_supply": fan_presets_supply.registers[3],
-            "fan_preset_1_extract": fan_presets_extract.registers[0],
-            "fan_preset_2_extract": fan_presets_extract.registers[1],
-            "fan_preset_3_extract": fan_presets_extract.registers[2],
-            "fan_preset_4_extract": fan_presets_extract.registers[3],
-            "measured_supply_flow_1": ir_supply_flows.registers[0],
-            "measured_supply_flow_2": ir_supply_flows.registers[1],
-            "measured_supply_flow_3": ir_supply_flows.registers[2],
-            "measured_supply_flow_4": ir_supply_flows.registers[3],
-            "measured_extract_flow_1": ir_extract_flows.registers[0],
-            "measured_extract_flow_2": ir_extract_flows.registers[1],
-            "measured_extract_flow_3": ir_extract_flows.registers[2],
-            "measured_extract_flow_4": ir_extract_flows.registers[3],
-            "dryness_protection": coil_bits[0],
-            "night_cooling": coil_bits[1],
-            "intensive_boost": coil_bits[2],
-            "full_recirc_building_protection": coil_bits[3],
-            "full_recirc_economy": coil_bits[4],
-            "air_flow_by_rh": coil_bits[5],
-            "night_cooling_start_hours": night_cooling_start_hours,
-            "night_cooling_start_mins": night_cooling_start_mins,
-            "night_cooling_stop_hours": night_cooling_stop_hours,
-            "night_cooling_stop_mins": night_cooling_stop_mins,
-            "night_cooling_start_extract": night_cooling_start_extract,
-            "night_cooling_stop_extract": night_cooling_stop_extract,
-            "night_cooling_start_outdoor": night_cooling_start_outdoor,
-            "night_cooling_setpoint": night_cooling_setpoint,
-            "night_cooling_active": night_cooling_active,
-            "current_system_state": current_system_state,
-            "required_supply_temperature": required_supply_temp,
-            "supply_air_temperature": supply_temp,
-            "extract_air_temperature": extract_temp,
-            "exhaust_air_temperature": exhaust_temp,
-            "outdoor_air_temperature": outdoor_temp,
-            "active_alarms_count": active_alarms_count,
-            "filters_days_left": filters_days_left,
-            "supply_filter_pressure": supply_filter_pressure,
-            "extract_filter_pressure": extract_filter_pressure,
-            "heat_exchanger_pressure": heat_exchanger_pressure,
-            "heat_transfer_efficiency": heat_transfer_efficiency,
-            "critical_alarm": bool(discretes.bits[0]),
-            "warning": bool(discretes.bits[1]),
-            "active_alarm_codes": active_alarm_codes,
-            "active_alarm_texts": active_alarm_texts,
+            "system_mode":m[0],"comfort_setpoint":m[1]/10,"air_flow_percent":m[2],
+            "intensive_time_left":r[12],"fan_preset_1_supply":supply_cfg.registers[0],"fan_preset_2_supply":supply_cfg.registers[1],"fan_preset_3_supply":supply_cfg.registers[2],"fan_preset_4_supply":supply_cfg.registers[3],
+            "fan_preset_1_extract":extract_cfg.registers[0],"fan_preset_2_extract":extract_cfg.registers[1],"fan_preset_3_extract":extract_cfg.registers[2],"fan_preset_4_extract":extract_cfg.registers[3],
+            "measured_supply_flow_1":ir_sf.registers[0],"measured_supply_flow_2":ir_sf.registers[1],"measured_supply_flow_3":ir_sf.registers[2],"measured_supply_flow_4":ir_sf.registers[3],
+            "measured_extract_flow_1":ir_ef.registers[0],"measured_extract_flow_2":ir_ef.registers[1],"measured_extract_flow_3":ir_ef.registers[2],"measured_extract_flow_4":ir_ef.registers[3],
+            "dryness":c[0],"night_cooling":c[1],"intensive_boost":c[2],"full_recirc_protection":c[3],"full_recirc_economy":c[4],"flow_by_rh":c[5],
+            "nc_start_hours":n[0],"nc_start_mins":n[1],"nc_stop_hours":n[2],"nc_stop_mins":n[3],"nc_start_extract":signed(n[4])/10,"nc_stop_extract":signed(n[5])/10,"nc_start_outdoor":signed(n[6])/10,"nc_setpoint":signed(n[7])/10,"nc_active":bool(nc_active.bits[0]),
+            "state":r[0],"supply_temp":signed(r[17])/10,"extract_temp":signed(r[18])/10,"exhaust_temp":signed(r[19])/10,"outdoor_temp":signed(r[20])/10,"required_supply_temp":signed(r[16])/10,
+            "alarms_count":r[27],"filter_days_left":r[29],"supply_filter_pressure":p[0],"extract_filter_pressure":p[3],"heat_exchanger_pressure":p[6],"efficiency":p[13],"critical_alarm":bool(critical.bits[0]),"warning":bool(critical.bits[1]),"alarm_codes":codes,"alarm_texts":[ALARM_MESSAGES.get(x,f"Неизвестная ошибка #{x}") for x in codes],
         }
-
-    @staticmethod
-    def _to_signed16(value: int) -> int:
-        return value - 65536 if value > 32767 else value
-
-    async def async_write_system_mode(self, value: int) -> None:
-        kw = {self._device_kwarg: self._slave}
-        await self._client.write_register(REG_SYSTEM_MODE, value, **kw)
-        await self.async_request_refresh()
-
-    async def async_write_comfort_setpoint(self, celsius: float) -> None:
-        raw = int(round(celsius * 10))
-        kw = {self._device_kwarg: self._slave}
-        await self._client.write_register(REG_COMFORT_SETPOINT, raw, **kw)
-        await self.async_request_refresh()
-
-    async def async_write_coil(self, address: int, state: bool) -> None:
-        kw = {self._device_kwarg: self._slave}
-        await self._client.write_coil(address, state, **kw)
-        await self.async_request_refresh()
-
-    async def async_write_register(self, address: int, value: int) -> None:
-        kw = {self._device_kwarg: self._slave}
-        await self._client.write_register(address, value, **kw)
-        await self.async_request_refresh()
+    async def _write(self,address,value):
+        await self._client.write_register(address,value,**{self._kw:self._slave}); await self.async_request_refresh()
+    async def write_coil(self,address,value):
+        await self._client.write_coil(address,value,**{self._kw:self._slave}); await self.async_request_refresh()
+    async def write_mode(self,value): await self._write(REG_SYSTEM_MODE,value)
+    async def write_comfort(self,value): await self._write(REG_COMFORT_SETPOINT,round(value*10))
+    async def write_preset(self,address,value): await self._write(address,round(value*10))
+    async def write_nc(self,address,value,scale=1): await self._write(address,round(value*scale))

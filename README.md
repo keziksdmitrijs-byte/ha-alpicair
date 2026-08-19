@@ -1,56 +1,32 @@
-# AlpicAir Ventilation Unit — Home Assistant Integration
+# AlpicAir Ventilation Unit — v0.6.0
 
-Custom HACS-integration for controlling **AlpicAir** heat recovery ventilation
-units (OEM-manufactured by SALDA, MCB 1.27 controller) over Modbus TCP.
+Added editable airflow presets and Night Cooling configuration.
 
-## v0.5.0 — fix "Modbus device returned an error response"
+## Editable airflow presets
 
-**Root cause:** the discrete inputs read in v0.4.0 spanned addresses 188-209
-in a single request (critical alarm, warning, ... night cooling active). The
-MCB 1.27 register table shows that 190-199 is only partially defined ("Test
-mode" block, not a clean "Reserved" fill), and this SALDA controller returns
-a Modbus exception for the *entire* request when it includes those undefined
-addresses — which is exactly the "Failed setup, will retry: Modbus device
-returned an error response" error reported after install.
+The existing read-only measured flow sensors (Input Registers 77-86) remain unchanged. New slider entities write to the actual configurable Holding Registers 450-459:
 
-**Fix:** the discrete input reads are now split into three independent, tightly
-scoped requests:
-- Address 188-189 (critical alarm, warning) — 2 registers.
-- Address 209 (night cooling active) — 1 register, read separately.
-- Address 1-72 (full alarm list) — unchanged, this range has no gaps.
+- Supply 1-4: Building protection, Economy, Comfort, Boost — 450-453.
+- Extract 1-4: Building protection, Economy, Comfort, Boost — 456-459.
 
-No entities or functionality were removed; only the underlying Modbus read
-strategy changed.
+The registers use a 0.1% scale: 300 = 30%, 500 = 50%, 1000 = 100%. The sliders display 0-100% and convert automatically on write [file:16].
 
-## v0.4.0 — measured flow per speed step, night cooling settings
+## Editable Night Cooling
 
-- Measured air flow sensors (m3/h) for all 4 fixed speed steps, supply
-  (Input 77-80) and extract (Input 83-86): step 1 = Building protection,
-  step 2 = Economy, step 3 = Comfort, step 4 = Boost/Intensive.
-- Full Night Cooling configuration as `number` entities (Holding 25-32):
-  start/stop time, extract/outdoor temperature thresholds, supply setpoint.
-- "Ночное охлаждение сейчас" sensor (Discrete 209).
+Night Cooling is now fully configurable through `number` entities:
 
-## v0.3.0 — modes as dropdown, temperatures, filters, diagnostics
+- Start hour/minute — Holding 25/26.
+- Stop hour/minute — Holding 27/28.
+- Extract temperature for start/stop — Holding 29/30, x0.1°C.
+- Outdoor temperature threshold — Holding 31, x0.1°C.
+- Supply temperature setpoint — Holding 32, x0.1°C.
 
-- Operating modes as a single **select** dropdown; **Off** as a dedicated button.
-- Temperature sensors, filter/diagnostics sensors, configurable 4-speed fan presets.
-- Alarm/error visibility with decoded Russian text.
-- pymodbus 3.10+ compatibility fix (`device_id=` vs `slave=` auto-detection).
+The existing switch controls function enable/disable through Coil 4; the sensor shows whether Night Cooling is currently active via Discrete Input 209 [file:16].
 
-## Installation via HACS
+## Other functionality
 
-1. HACS → Integrations → three-dot menu → **Custom repositories**.
-2. Add `https://github.com/keziksdmitrijs-byte/ha-alpicair`, category **Integration**.
-3. Install **AlpicAir Ventilation Unit**, restart Home Assistant.
-4. Settings → Devices & Services → **Add Integration** → search "AlpicAir".
-5. Enter gateway IP, Modbus TCP port (default 502), slave ID (default 1).
+Mode selection, Standby button, target Comfort temperature, air temperatures, measured flow sensors, filter pressure/days, efficiency and decoded alarms remain available.
 
-If you already have the integration installed and are hitting the "Modbus
-device returned an error response" error, update to this version via HACS,
-restart Home Assistant, and the config entry will retry automatically.
+## Installation
 
-## Disclaimer
-
-Not affiliated with or endorsed by AlpicAir or SALDA. Verify register
-addresses against your unit's documentation before use.
+Install through HACS from `https://github.com/keziksdmitrijs-byte/ha-alpicair`, then restart Home Assistant and add AlpicAir from Settings → Devices & Services.

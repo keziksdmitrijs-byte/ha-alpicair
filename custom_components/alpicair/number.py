@@ -1,228 +1,33 @@
-"""Number platform for AlpicAir: temperature slider + fan speed presets + night cooling."""
 from __future__ import annotations
-
-from homeassistant.components.number import NumberEntity, NumberDeviceClass, NumberMode
+from homeassistant.components.number import NumberEntity,NumberDeviceClass,NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from .const import (
-    DOMAIN, MIN_TEMP, MAX_TEMP, TEMP_STEP,
-    REG_AIR_FLOW_1_SUPPLY, REG_AIR_FLOW_2_SUPPLY, REG_AIR_FLOW_3_SUPPLY, REG_AIR_FLOW_4_SUPPLY,
-    REG_AIR_FLOW_1_EXTRACT, REG_AIR_FLOW_2_EXTRACT, REG_AIR_FLOW_3_EXTRACT, REG_AIR_FLOW_4_EXTRACT,
-    REG_NIGHT_COOLING_START_HOURS, REG_NIGHT_COOLING_START_MINS,
-    REG_NIGHT_COOLING_STOP_HOURS, REG_NIGHT_COOLING_STOP_MINS,
-    REG_NIGHT_COOLING_START_EXTRACT, REG_NIGHT_COOLING_STOP_EXTRACT,
-    REG_NIGHT_COOLING_START_OUTDOOR, REG_NIGHT_COOLING_SETPOINT,
-)
-
-FAN_PRESETS = [
-    ("fan_preset_1_supply", REG_AIR_FLOW_1_SUPPLY, "Расход приток, ступень 1 (Защита здания)", "mdi:fan-speed-1"),
-    ("fan_preset_2_supply", REG_AIR_FLOW_2_SUPPLY, "Расход приток, ступень 2 (Эконом)", "mdi:fan-speed-2"),
-    ("fan_preset_3_supply", REG_AIR_FLOW_3_SUPPLY, "Расход приток, ступень 3 (Комфорт)", "mdi:fan-speed-3"),
-    ("fan_preset_4_supply", REG_AIR_FLOW_4_SUPPLY, "Расход приток, ступень 4 (Форсаж)", "mdi:fan-plus"),
-    ("fan_preset_1_extract", REG_AIR_FLOW_1_EXTRACT, "Расход вытяжка, ступень 1 (Защита здания)", "mdi:fan-speed-1"),
-    ("fan_preset_2_extract", REG_AIR_FLOW_2_EXTRACT, "Расход вытяжка, ступень 2 (Эконом)", "mdi:fan-speed-2"),
-    ("fan_preset_3_extract", REG_AIR_FLOW_3_EXTRACT, "Расход вытяжка, ступень 3 (Комфорт)", "mdi:fan-speed-3"),
-    ("fan_preset_4_extract", REG_AIR_FLOW_4_EXTRACT, "Расход вытяжка, ступень 4 (Форсаж)", "mdi:fan-plus"),
-]
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [AlpicAirComfortSetpointNumber(coordinator, entry)]
-    entities += [AlpicAirFanPresetNumber(coordinator, entry, k, a, n, i) for k, a, n, i in FAN_PRESETS]
-    entities += [
-        AlpicAirNightCoolingStartHours(coordinator, entry),
-        AlpicAirNightCoolingStartMins(coordinator, entry),
-        AlpicAirNightCoolingStopHours(coordinator, entry),
-        AlpicAirNightCoolingStopMins(coordinator, entry),
-        AlpicAirNightCoolingStartExtract(coordinator, entry),
-        AlpicAirNightCoolingStopExtract(coordinator, entry),
-        AlpicAirNightCoolingStartOutdoor(coordinator, entry),
-        AlpicAirNightCoolingSetpoint(coordinator, entry),
-    ]
-    async_add_entities(entities)
-
-
-class _Base(CoordinatorEntity, NumberEntity):
-    def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._entry.entry_id)},
-            name=self._entry.title,
-            manufacturer="AlpicAir",
-            model="MCB 1.27 (OEM SALDA)",
-        )
-
-
-class AlpicAirComfortSetpointNumber(_Base):
-    _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = "°C"
-    _attr_native_min_value = MIN_TEMP
-    _attr_native_max_value = MAX_TEMP
-    _attr_native_step = TEMP_STEP
-    _attr_mode = NumberMode.SLIDER
-    _attr_icon = "mdi:thermometer"
-
-    def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_comfort_setpoint_number"
-        self._attr_name = "Целевая температура"
-
-    @property
-    def native_value(self):
-        return self.coordinator.data["comfort_setpoint"]
-
-    async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.async_write_comfort_setpoint(value)
-
-
-class AlpicAirFanPresetNumber(_Base):
-    _attr_native_unit_of_measurement = "%"
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 100.0
-    _attr_native_step = 0.5
-    _attr_mode = NumberMode.BOX
-    _attr_entity_category = "config"
-
-    def __init__(self, coordinator, entry: ConfigEntry, data_key: str, address: int, name: str, icon: str) -> None:
-        super().__init__(coordinator, entry)
-        self._data_key = data_key
-        self._address = address
-        self._attr_unique_id = f"{entry.entry_id}_{data_key}"
-        self._attr_name = name
-        self._attr_icon = icon
-
-    @property
-    def native_value(self):
-        raw = self.coordinator.data.get(self._data_key)
-        return raw / 10.0 if raw is not None else None
-
-    async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.async_write_register(self._address, int(round(value * 10)))
-
-
-class _NightCoolingHourMinBase(_Base):
-    _attr_mode = NumberMode.BOX
-    _attr_entity_category = "config"
-    _attr_native_step = 1
-
-    def __init__(self, coordinator, entry: ConfigEntry, data_key: str, address: int, name: str, icon: str) -> None:
-        super().__init__(coordinator, entry)
-        self._data_key = data_key
-        self._address = address
-        self._attr_unique_id = f"{entry.entry_id}_{data_key}"
-        self._attr_name = name
-        self._attr_icon = icon
-
-    @property
-    def native_value(self):
-        return self.coordinator.data.get(self._data_key)
-
-    async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.async_write_register(self._address, int(round(value)))
-
-
-class AlpicAirNightCoolingStartHours(_NightCoolingHourMinBase):
-    _attr_native_min_value = 0
-    _attr_native_max_value = 23
-    _attr_native_unit_of_measurement = "h"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_start_hours",
-                          REG_NIGHT_COOLING_START_HOURS, "Ночное охлаждение: час начала", "mdi:clock-start")
-
-
-class AlpicAirNightCoolingStartMins(_NightCoolingHourMinBase):
-    _attr_native_min_value = 0
-    _attr_native_max_value = 59
-    _attr_native_unit_of_measurement = "min"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_start_mins",
-                          REG_NIGHT_COOLING_START_MINS, "Ночное охлаждение: минута начала", "mdi:clock-start")
-
-
-class AlpicAirNightCoolingStopHours(_NightCoolingHourMinBase):
-    _attr_native_min_value = 0
-    _attr_native_max_value = 23
-    _attr_native_unit_of_measurement = "h"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_stop_hours",
-                          REG_NIGHT_COOLING_STOP_HOURS, "Ночное охлаждение: час окончания", "mdi:clock-end")
-
-
-class AlpicAirNightCoolingStopMins(_NightCoolingHourMinBase):
-    _attr_native_min_value = 0
-    _attr_native_max_value = 59
-    _attr_native_unit_of_measurement = "min"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_stop_mins",
-                          REG_NIGHT_COOLING_STOP_MINS, "Ночное охлаждение: минута окончания", "mdi:clock-end")
-
-
-class _NightCoolingTempBase(_Base):
-    _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = "°C"
-    _attr_mode = NumberMode.BOX
-    _attr_entity_category = "config"
-    _attr_native_step = 0.5
-
-    def __init__(self, coordinator, entry: ConfigEntry, data_key: str, address: int, name: str, icon: str) -> None:
-        super().__init__(coordinator, entry)
-        self._data_key = data_key
-        self._address = address
-        self._attr_unique_id = f"{entry.entry_id}_{data_key}"
-        self._attr_name = name
-        self._attr_icon = icon
-
-    @property
-    def native_value(self):
-        return self.coordinator.data.get(self._data_key)
-
-    async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.async_write_register(self._address, int(round(value * 10)))
-
-
-class AlpicAirNightCoolingStartExtract(_NightCoolingTempBase):
-    _attr_native_min_value = 13.0
-    _attr_native_max_value = 30.0
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_start_extract",
-                          REG_NIGHT_COOLING_START_EXTRACT, "Ночное охлаждение: t вытяжки для старта", "mdi:thermometer")
-
-
-class AlpicAirNightCoolingStopExtract(_NightCoolingTempBase):
-    _attr_native_min_value = 13.0
-    _attr_native_max_value = 30.0
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_stop_extract",
-                          REG_NIGHT_COOLING_STOP_EXTRACT, "Ночное охлаждение: t вытяжки для стопа", "mdi:thermometer")
-
-
-class AlpicAirNightCoolingStartOutdoor(_NightCoolingTempBase):
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 30.0
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_start_outdoor",
-                          REG_NIGHT_COOLING_START_OUTDOOR, "Ночное охлаждение: t наружная для стопа", "mdi:thermometer")
-
-
-class AlpicAirNightCoolingSetpoint(_NightCoolingTempBase):
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 30.0
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry, "night_cooling_setpoint",
-                          REG_NIGHT_COOLING_SETPOINT, "Ночное охлаждение: уставка притока", "mdi:thermometer")
+from .const import *
+FAN_PRESETS=[("fan_preset_1_supply",REG_FLOW_1_SUPPLY,"Расход приток, ступень 1 (Защита здания)"),("fan_preset_2_supply",REG_FLOW_2_SUPPLY,"Расход приток, ступень 2 (Эконом)"),("fan_preset_3_supply",REG_FLOW_3_SUPPLY,"Расход приток, ступень 3 (Комфорт)"),("fan_preset_4_supply",REG_FLOW_4_SUPPLY,"Расход приток, ступень 4 (Форсаж)"),("fan_preset_1_extract",REG_FLOW_1_EXTRACT,"Расход вытяжка, ступень 1 (Защита здания)"),("fan_preset_2_extract",REG_FLOW_2_EXTRACT,"Расход вытяжка, ступень 2 (Эконом)"),("fan_preset_3_extract",REG_FLOW_3_EXTRACT,"Расход вытяжка, ступень 3 (Комфорт)"),("fan_preset_4_extract",REG_FLOW_4_EXTRACT,"Расход вытяжка, ступень 4 (Форсаж)")]
+NC_NUMBERS=[("nc_start_hours",REG_NC_START_HOURS,0,23,1,"Ночное охлаждение: час начала","h",1),("nc_start_mins",REG_NC_START_MINS,0,59,1,"Ночное охлаждение: минута начала","min",1),("nc_stop_hours",REG_NC_STOP_HOURS,0,23,1,"Ночное охлаждение: час окончания","h",1),("nc_stop_mins",REG_NC_STOP_MINS,0,59,1,"Ночное охлаждение: минута окончания","min",1),("nc_start_extract",REG_NC_START_EXTRACT,13,30,.5,"Ночное охлаждение: температура вытяжки для запуска","°C",10),("nc_stop_extract",REG_NC_STOP_EXTRACT,13,30,.5,"Ночное охлаждение: температура вытяжки для остановки","°C",10),("nc_start_outdoor",REG_NC_START_OUTDOOR,0,30,.5,"Ночное охлаждение: наружная температура для остановки","°C",10),("nc_setpoint",REG_NC_SETPOINT,0,30,.5,"Ночное охлаждение: уставка притока","°C",10)]
+async def async_setup_entry(hass,entry,async_add_entities):
+ c=hass.data[DOMAIN][entry.entry_id]; e=[AlpicAirComfort(c,entry)]+[FanPreset(c,entry,*x) for x in FAN_PRESETS]+[NightCooling(c,entry,*x) for x in NC_NUMBERS]; async_add_entities(e)
+class Base(CoordinatorEntity,NumberEntity):
+ def __init__(self,c,e): super().__init__(c); self.e=e
+ @property
+ def device_info(self): return DeviceInfo(identifiers={(DOMAIN,self.e.entry_id)},name=self.e.title,manufacturer="AlpicAir",model="MCB 1.27 (OEM SALDA)")
+class AlpicAirComfort(Base):
+ _attr_device_class=NumberDeviceClass.TEMPERATURE; _attr_native_unit_of_measurement="°C"; _attr_native_min_value=15; _attr_native_max_value=25; _attr_native_step=.5; _attr_mode=NumberMode.SLIDER
+ def __init__(self,c,e): super().__init__(c,e); self._attr_unique_id=f"{e.entry_id}_comfort"; self._attr_name="Целевая температура"
+ @property
+ def native_value(self): return self.coordinator.data.get("comfort_setpoint")
+ async def async_set_native_value(self,v): await self.coordinator.write_comfort(v)
+class FanPreset(Base):
+ _attr_native_min_value=0; _attr_native_max_value=100; _attr_native_step=.5; _attr_native_unit_of_measurement="%"; _attr_mode=NumberMode.SLIDER; _attr_entity_category="config"; _attr_icon="mdi:fan"
+ def __init__(self,c,e,key,address,name): super().__init__(c,e); self.key=key; self.address=address; self._attr_unique_id=f"{e.entry_id}_{key}"; self._attr_name=name
+ @property
+ def native_value(self): return self.coordinator.data.get(self.key,0)/10
+ async def async_set_native_value(self,v): await self.coordinator.write_preset(self.address,v)
+class NightCooling(Base):
+ _attr_mode=NumberMode.SLIDER; _attr_entity_category="config"
+ def __init__(self,c,e,key,address,mi,ma,step,name,unit,scale): super().__init__(c,e); self.key=key; self.address=address; self.scale=scale; self._attr_unique_id=f"{e.entry_id}_{key}"; self._attr_name=name; self._attr_native_min_value=mi; self._attr_native_max_value=ma; self._attr_native_step=step; self._attr_native_unit_of_measurement=unit; self._attr_icon="mdi:weather-night"
+ @property
+ def native_value(self): return self.coordinator.data.get(self.key)
+ async def async_set_native_value(self,v): await self.coordinator.write_nc(self.address,v,self.scale)

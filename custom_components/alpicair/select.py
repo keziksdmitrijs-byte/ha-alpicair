@@ -1,59 +1,17 @@
-"""Select platform for AlpicAir: operating modes + intensive boost as a dropdown."""
-from __future__ import annotations
-
 from homeassistant.components.select import SelectEntity
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from .const import DOMAIN, COIL_INTENSIVE_AIR_FLOW_BOOST
-
-OPTION_PROTECTION = "Защита здания"
-OPTION_ECONOMY = "Эконом"
-OPTION_COMFORT = "Комфорт"
-OPTION_INTENSIVE = "Интенсивный обдув"
-
-MODE_OPTIONS = [OPTION_PROTECTION, OPTION_ECONOMY, OPTION_COMFORT, OPTION_INTENSIVE]
-MODE_TO_REGISTER_VALUE = {OPTION_PROTECTION: 1, OPTION_ECONOMY: 2, OPTION_COMFORT: 3}
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([AlpicAirModeSelect(coordinator, entry)])
-
-
-class AlpicAirModeSelect(CoordinatorEntity, SelectEntity):
-    _attr_icon = "mdi:fan"
-    _attr_options = MODE_OPTIONS
-
-    def __init__(self, coordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_mode_select"
-        self._attr_name = "Режим вентиляции"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._entry.entry_id)},
-            name=self._entry.title,
-            manufacturer="AlpicAir",
-            model="MCB 1.27 (OEM SALDA)",
-        )
-
-    @property
-    def current_option(self) -> str | None:
-        if self.coordinator.data.get("intensive_boost"):
-            return OPTION_INTENSIVE
-        mode = self.coordinator.data.get("system_mode")
-        for option, value in MODE_TO_REGISTER_VALUE.items():
-            if value == mode:
-                return option
-        return None
-
-    async def async_select_option(self, option: str) -> None:
-        if option == OPTION_INTENSIVE:
-            await self.coordinator.async_write_coil(COIL_INTENSIVE_AIR_FLOW_BOOST, True)
-            return
-        await self.coordinator.async_write_system_mode(MODE_TO_REGISTER_VALUE[option])
+from homeassistant.helpers.entity import DeviceInfo
+from .const import *
+async def async_setup_entry(hass,entry,add): add([ModeSelect(hass.data[DOMAIN][entry.entry_id],entry)])
+class ModeSelect(CoordinatorEntity,SelectEntity):
+ _attr_name="Режим вентиляции"; _attr_icon="mdi:fan"; _attr_options=["Защита здания","Эконом","Комфорт","Интенсивный обдув"]
+ def __init__(self,c,e): super().__init__(c); self.e=e; self._attr_unique_id=f"{e.entry_id}_mode"
+ @property
+ def device_info(self): return DeviceInfo(identifiers={(DOMAIN,self.e.entry_id)},name=self.e.title,manufacturer="AlpicAir",model="MCB 1.27 (OEM SALDA)")
+ @property
+ def current_option(self):
+  if self.coordinator.data.get("intensive_boost"): return "Интенсивный обдув"
+  return {1:"Защита здания",2:"Эконом",3:"Комфорт"}.get(self.coordinator.data.get("system_mode"))
+ async def async_select_option(self,o):
+  if o=="Интенсивный обдув": await self.coordinator.write_coil(COIL_INTENSIVE_BOOST,True)
+  else: await self.coordinator.write_mode({"Защита здания":1,"Эконом":2,"Комфорт":3}[o])

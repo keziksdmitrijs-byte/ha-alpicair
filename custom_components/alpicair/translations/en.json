@@ -2,18 +2,18 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect AlpicAir",
-        "description": "Enter connection details for the AlpicAir (OEM SALDA MCB 1.27) ventilation unit Modbus TCP gateway.",
+        "title": "Подключение AlpicAir",
+        "description": "Modbus TCP для рекуператора AlpicAir/SALDA MCB 1.27",
         "data": {
-          "name": "Device name",
-          "host": "IP address",
-          "port": "Port",
-          "slave": "Modbus slave ID"
+          "name": "Название",
+          "host": "IP-адрес",
+          "port": "Порт",
+          "slave": "Slave ID"
         }
       }
     },
     "abort": {
-      "already_configured": "This device is already configured"
+      "already_configured": "Устройство уже настроено"
     }
   }
 }
