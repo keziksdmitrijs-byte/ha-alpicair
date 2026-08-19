@@ -14,33 +14,31 @@ CONF_SLAVE = "slave"
 # ---------------------------------------------------------------------------
 
 # --- Holding registers (0x03/0x06/0x10), Read/Write ---
-REG_SYSTEM_MODE = 1                    # 0:Standby 1:BuildingProtection 2:Economy 3:Comfort
-REG_COMFORT_SETPOINT = 2               # 160..300 (x0.1 C)
-REG_AIR_FLOW_PERCENT = 3               # 0..100 %
-REG_ECONOMY_SETPOINT = 4               # 0:EnergySaving, 160..300 (x0.1 C)
-REG_BUILDING_PROTECTION_SETPOINT = 6   # 0:EnergySaving, 160..300 (x0.1 C)
-REG_INTENSIVE_TIME_SET = 14            # 0-18000 s, intensive boost duration
-REG_INTENSIVE_TIME_LEFT = 107          # seconds, read-only via holding
+REG_SYSTEM_MODE = 1
+REG_COMFORT_SETPOINT = 2
+REG_AIR_FLOW_PERCENT = 3
+REG_ECONOMY_SETPOINT = 4
+REG_BUILDING_PROTECTION_SETPOINT = 6
+REG_INTENSIVE_TIME_SET = 14
+REG_INTENSIVE_TIME_LEFT = 107
 
-# Night cooling settings, Holding registers (User level)
-REG_NIGHT_COOLING_START_HOURS = 25      # 0-23
-REG_NIGHT_COOLING_START_MINS = 26       # 0-59
-REG_NIGHT_COOLING_STOP_HOURS = 27       # 0-23
-REG_NIGHT_COOLING_STOP_MINS = 28        # 0-59
-REG_NIGHT_COOLING_START_EXTRACT = 29    # 130-300 (x0.1 C) extract temp to start
-REG_NIGHT_COOLING_STOP_EXTRACT = 30     # 130-300 (x0.1 C) extract temp to stop
-REG_NIGHT_COOLING_START_OUTDOOR = 31    # 0-300 (x0.1 C) outdoor temp to stop
-REG_NIGHT_COOLING_SETPOINT = 32         # 0-300 (x0.1 C) supply air setpoint
+REG_NIGHT_COOLING_START_HOURS = 25
+REG_NIGHT_COOLING_START_MINS = 26
+REG_NIGHT_COOLING_STOP_HOURS = 27
+REG_NIGHT_COOLING_STOP_MINS = 28
+REG_NIGHT_COOLING_START_EXTRACT = 29
+REG_NIGHT_COOLING_STOP_EXTRACT = 30
+REG_NIGHT_COOLING_START_OUTDOOR = 31
+REG_NIGHT_COOLING_SETPOINT = 32
 
-# Air flow adjustment (4-speed presets, % of nominal), Adjuster level
-REG_AIR_FLOW_1_SUPPLY = 450   # Building protection
-REG_AIR_FLOW_2_SUPPLY = 451   # Economy
-REG_AIR_FLOW_3_SUPPLY = 452   # Comfort
-REG_AIR_FLOW_4_SUPPLY = 453   # Boost / Intensive
-REG_AIR_FLOW_1_EXTRACT = 456  # Building protection
-REG_AIR_FLOW_2_EXTRACT = 457  # Economy
-REG_AIR_FLOW_3_EXTRACT = 458  # Comfort
-REG_AIR_FLOW_4_EXTRACT = 459  # Boost / Intensive
+REG_AIR_FLOW_1_SUPPLY = 450
+REG_AIR_FLOW_2_SUPPLY = 451
+REG_AIR_FLOW_3_SUPPLY = 452
+REG_AIR_FLOW_4_SUPPLY = 453
+REG_AIR_FLOW_1_EXTRACT = 456
+REG_AIR_FLOW_2_EXTRACT = 457
+REG_AIR_FLOW_3_EXTRACT = 458
+REG_AIR_FLOW_4_EXTRACT = 459
 
 # --- Coils (0x01/0x05), Read/Write ---
 COIL_DRYNESS_PROTECTION = 3
@@ -52,44 +50,46 @@ COIL_AIR_FLOW_CONTROL_BY_RH = 8
 COIL_GO_BACK_PREVIOUS_MODE = 53
 
 # --- Input registers (0x04), Read only ---
-IR_CURRENT_SYSTEM_STATE = 1        # 0-255, detailed state (see SYSTEM_STATE_MAP)
-IR_INTENSIVE_TIME_LEFT = 13        # seconds
-IR_CURRENT_SYSTEM_MODE = 15        # 0-4
-IR_CURRENT_AIR_FLOW = 16           # 0..100 %
-IR_REQUIRED_SUPPLY_TEMPERATURE = 17    # x0.1 C
-IR_SUPPLY_AIR_TEMPERATURE = 18         # T1, x0.1 C
-IR_EXTRACT_AIR_TEMPERATURE = 19        # T2, x0.1 C
-IR_EXHAUST_AIR_TEMPERATURE = 20        # T3, x0.1 C
-IR_OUTDOOR_AIR_TEMPERATURE = 21        # T4, x0.1 C
-IR_SUPPLY_AIR_RH = 22               # x0.1 %
-IR_SUPPLY_AIR_CO2 = 23              # ppm
-IR_EXTRACT_AIR_RH = 24              # x0.1 %
-IR_EXTRACT_AIR_CO2 = 25             # ppm
-IR_ACTIVE_ALARMS_COUNT = 28         # 0-100
-IR_FILTERS_TIMER_DAYS_LEFT = 30     # 1-365 days
+IR_CURRENT_SYSTEM_STATE = 1
+IR_INTENSIVE_TIME_LEFT = 13
+IR_CURRENT_SYSTEM_MODE = 15
+IR_CURRENT_AIR_FLOW = 16
+IR_REQUIRED_SUPPLY_TEMPERATURE = 17
+IR_SUPPLY_AIR_TEMPERATURE = 18
+IR_EXTRACT_AIR_TEMPERATURE = 19
+IR_EXHAUST_AIR_TEMPERATURE = 20
+IR_OUTDOOR_AIR_TEMPERATURE = 21
+IR_SUPPLY_AIR_RH = 22
+IR_SUPPLY_AIR_CO2 = 23
+IR_EXTRACT_AIR_RH = 24
+IR_EXTRACT_AIR_CO2 = 25
+IR_ACTIVE_ALARMS_COUNT = 28
+IR_FILTERS_TIMER_DAYS_LEFT = 30
 
-# Measured air flow per fixed speed step (m3/h), read-only
-IR_1_SUPPLY_AIR_FLOW = 77    # Building protection
-IR_2_SUPPLY_AIR_FLOW = 78    # Economy
-IR_3_SUPPLY_AIR_FLOW = 79    # Comfort
-IR_4_SUPPLY_AIR_FLOW = 80    # Boost / Intensive
-IR_1_EXTRACT_AIR_FLOW = 83   # Building protection
-IR_2_EXTRACT_AIR_FLOW = 84   # Economy
-IR_3_EXTRACT_AIR_FLOW = 85   # Comfort
-IR_4_EXTRACT_AIR_FLOW = 86   # Boost / Intensive
+IR_1_SUPPLY_AIR_FLOW = 77
+IR_2_SUPPLY_AIR_FLOW = 78
+IR_3_SUPPLY_AIR_FLOW = 79
+IR_4_SUPPLY_AIR_FLOW = 80
+IR_1_EXTRACT_AIR_FLOW = 83
+IR_2_EXTRACT_AIR_FLOW = 84
+IR_3_EXTRACT_AIR_FLOW = 85
+IR_4_EXTRACT_AIR_FLOW = 86
 
-IR_SUPPLY_FILTER_PRESSURE = 112     # Pa
-IR_EXTRACT_FILTER_PRESSURE = 115    # Pa
-IR_HEAT_EXCHANGER_PRESSURE = 118    # Pa
-IR_AFTER_HX_TEMPERATURE = 124       # x0.1 C
-IR_HEAT_TRANSFER_EFFICIENCY = 125   # 0-100 %
+IR_SUPPLY_FILTER_PRESSURE = 112
+IR_EXTRACT_FILTER_PRESSURE = 115
+IR_HEAT_EXCHANGER_PRESSURE = 118
+IR_AFTER_HX_TEMPERATURE = 124
+IR_HEAT_TRANSFER_EFFICIENCY = 125
 
 # --- Discrete inputs (0x02), Read only ---
-DI_CRITICAL_ALARM = 188   # any active critical alarm
-DI_WARNING = 189          # any active warning
-DI_NIGHT_COOLING_FUNCTION = 209  # night cooling currently active
+# NOTE: addresses 190-199 are undefined ("Test mode" block partially used,
+# no full Reserved fill), so reads spanning 188 through 209 in one Modbus
+# request can trigger an exception response on some servers. Each discrete
+# group below is therefore read as its own short, contiguous request.
+DI_CRITICAL_ALARM = 188
+DI_WARNING = 189
+DI_NIGHT_COOLING_FUNCTION = 209
 
-# Individual alarm/warning bits (address -> human message), from Alarm list table
 ALARM_MESSAGES = {
     1: "Предупреждение: обрыв ремня ротора",
     2: "Авария: сработала защита камина",
@@ -173,12 +173,7 @@ SYSTEM_STATE_MAP = {
     17: "Тест противопожарной заслонки",
 }
 
-SYSTEM_MODES = {
-    0: "standby",
-    1: "building_protection",
-    2: "economy",
-    3: "comfort",
-}
+SYSTEM_MODES = {0: "standby", 1: "building_protection", 2: "economy", 3: "comfort"}
 SYSTEM_MODES_REVERSE = {v: k for k, v in SYSTEM_MODES.items()}
 
 MODE_LABELS_RU = {

@@ -29,36 +29,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         AlpicAirComfortSetpointSensor(coordinator, entry),
         AlpicAirAirFlowSensor(coordinator, entry),
         AlpicAirIntensiveTimeLeftSensor(coordinator, entry),
-        # --- Temperatures ---
-        AlpicAirTemperatureSensor(coordinator, entry, "supply_air_temperature",
-                                   "Температура притока", "mdi:thermometer"),
-        AlpicAirTemperatureSensor(coordinator, entry, "extract_air_temperature",
-                                   "Температура вытяжки", "mdi:thermometer"),
-        AlpicAirTemperatureSensor(coordinator, entry, "exhaust_air_temperature",
-                                   "Температура выброса", "mdi:thermometer"),
-        AlpicAirTemperatureSensor(coordinator, entry, "outdoor_air_temperature",
-                                   "Температура наружного воздуха", "mdi:thermometer"),
-        AlpicAirTemperatureSensor(coordinator, entry, "required_supply_temperature",
-                                   "Требуемая температура притока", "mdi:thermometer-lines"),
-        # --- Filters ---
+        AlpicAirTemperatureSensor(coordinator, entry, "supply_air_temperature", "Температура притока", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "extract_air_temperature", "Температура вытяжки", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "exhaust_air_temperature", "Температура выброса", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "outdoor_air_temperature", "Температура наружного воздуха", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "required_supply_temperature", "Требуемая температура притока", "mdi:thermometer-lines"),
         AlpicAirFiltersDaysLeftSensor(coordinator, entry),
-        AlpicAirPressureSensor(coordinator, entry, "supply_filter_pressure",
-                                "Давление приточного фильтра", "mdi:air-filter"),
-        AlpicAirPressureSensor(coordinator, entry, "extract_filter_pressure",
-                                "Давление вытяжного фильтра", "mdi:air-filter"),
-        AlpicAirPressureSensor(coordinator, entry, "heat_exchanger_pressure",
-                                "Давление теплообменника", "mdi:gauge"),
+        AlpicAirPressureSensor(coordinator, entry, "supply_filter_pressure", "Давление приточного фильтра", "mdi:air-filter"),
+        AlpicAirPressureSensor(coordinator, entry, "extract_filter_pressure", "Давление вытяжного фильтра", "mdi:air-filter"),
+        AlpicAirPressureSensor(coordinator, entry, "heat_exchanger_pressure", "Давление теплообменника", "mdi:gauge"),
         AlpicAirEfficiencySensor(coordinator, entry),
-        # --- Errors / diagnostics ---
         AlpicAirActiveAlarmsCountSensor(coordinator, entry),
         AlpicAirActiveAlarmsTextSensor(coordinator, entry),
-        # --- Night cooling status ---
         AlpicAirNightCoolingActiveSensor(coordinator, entry),
     ]
-    entities += [
-        AlpicAirMeasuredFlowSensor(coordinator, entry, key, name)
-        for key, name in MEASURED_FLOW_SENSORS
-    ]
+    entities += [AlpicAirMeasuredFlowSensor(coordinator, entry, key, name) for key, name in MEASURED_FLOW_SENSORS]
     async_add_entities(entities)
 
 
@@ -93,8 +78,6 @@ class AlpicAirModeSensor(_Base):
 
 
 class AlpicAirSystemStateSensor(_Base):
-    """Detailed state, including transient states like 'Boost', 'Preparing', 'Change filters'."""
-
     _attr_icon = "mdi:state-machine"
 
     def __init__(self, coordinator, entry):
@@ -232,8 +215,6 @@ class AlpicAirActiveAlarmsCountSensor(_Base):
 
 
 class AlpicAirActiveAlarmsTextSensor(_Base):
-    """Shows the first active alarm/warning text; full list is in the attributes."""
-
     _attr_icon = "mdi:alert"
 
     def __init__(self, coordinator, entry):
@@ -244,9 +225,7 @@ class AlpicAirActiveAlarmsTextSensor(_Base):
     @property
     def native_value(self):
         texts = self.coordinator.data.get("active_alarm_texts") or []
-        if not texts:
-            return "Нет активных ошибок"
-        return texts[0]
+        return texts[0] if texts else "Нет активных ошибок"
 
     @property
     def extra_state_attributes(self):
@@ -272,8 +251,6 @@ class AlpicAirNightCoolingActiveSensor(_Base):
 
 
 class AlpicAirMeasuredFlowSensor(_Base):
-    """Measured air flow (m3/h) for a given fixed speed step, from input registers 77-86."""
-
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "m³/h"
     _attr_icon = "mdi:air-filter"

@@ -12,12 +12,7 @@ from .const import DOMAIN, COIL_GO_BACK_PREVIOUS_MODE
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [
-            AlpicAirOffButton(coordinator, entry),
-            AlpicAirGoBackButton(coordinator, entry),
-        ]
-    )
+    async_add_entities([AlpicAirOffButton(coordinator, entry), AlpicAirGoBackButton(coordinator, entry)])
 
 
 class _Base(CoordinatorEntity, ButtonEntity):
@@ -36,8 +31,6 @@ class _Base(CoordinatorEntity, ButtonEntity):
 
 
 class AlpicAirOffButton(_Base):
-    """The only button kept as a dedicated button: switching the unit off (Standby)."""
-
     _attr_icon = "mdi:power"
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:

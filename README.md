@@ -3,29 +3,39 @@
 Custom HACS-integration for controlling **AlpicAir** heat recovery ventilation
 units (OEM-manufactured by SALDA, MCB 1.27 controller) over Modbus TCP.
 
+## v0.5.0 — fix "Modbus device returned an error response"
+
+**Root cause:** the discrete inputs read in v0.4.0 spanned addresses 188-209
+in a single request (critical alarm, warning, ... night cooling active). The
+MCB 1.27 register table shows that 190-199 is only partially defined ("Test
+mode" block, not a clean "Reserved" fill), and this SALDA controller returns
+a Modbus exception for the *entire* request when it includes those undefined
+addresses — which is exactly the "Failed setup, will retry: Modbus device
+returned an error response" error reported after install.
+
+**Fix:** the discrete input reads are now split into three independent, tightly
+scoped requests:
+- Address 188-189 (critical alarm, warning) — 2 registers.
+- Address 209 (night cooling active) — 1 register, read separately.
+- Address 1-72 (full alarm list) — unchanged, this range has no gaps.
+
+No entities or functionality were removed; only the underlying Modbus read
+strategy changed.
+
 ## v0.4.0 — measured flow per speed step, night cooling settings
 
-- Added **measured air flow sensors** (m3/h) for all 4 fixed speed steps, both
-  supply and extract, read from Input registers 77-80 (supply) and 83-86
-  (extract): step 1 = Building protection, step 2 = Economy, step 3 = Comfort,
-  step 4 = Boost/Intensive.
-- Added full **Night Cooling** configuration as `number` entities: start/stop
-  time (hours+minutes), extract air temperature thresholds for start/stop,
-  outdoor temperature threshold for stop, and supply air setpoint (Holding
-  registers 25-32).
-- Added "Ночное охлаждение сейчас" sensor (from discrete input 209) showing
-  whether the function is currently running.
-- Kept the existing Night cooling enable/disable switch (Coil 4).
+- Measured air flow sensors (m3/h) for all 4 fixed speed steps, supply
+  (Input 77-80) and extract (Input 83-86): step 1 = Building protection,
+  step 2 = Economy, step 3 = Comfort, step 4 = Boost/Intensive.
+- Full Night Cooling configuration as `number` entities (Holding 25-32):
+  start/stop time, extract/outdoor temperature thresholds, supply setpoint.
+- "Ночное охлаждение сейчас" sensor (Discrete 209).
 
 ## v0.3.0 — modes as dropdown, temperatures, filters, diagnostics
 
-- Operating modes (Building protection / Economy / Comfort / Intensive boost)
-  are a single **select** dropdown; **Off (Standby)** stays a dedicated button.
-- Temperature sensors: supply, extract, exhaust, outdoor, required supply setpoint.
-- Filter/diagnostics sensors: days left, supply/extract filter pressure, HX
-  pressure, heat transfer efficiency.
-- Configurable 4-speed fan presets (% of nominal) for supply and extract.
-- Alarm/error visibility: active alarm count, decoded text list, critical/warning flags.
+- Operating modes as a single **select** dropdown; **Off** as a dedicated button.
+- Temperature sensors, filter/diagnostics sensors, configurable 4-speed fan presets.
+- Alarm/error visibility with decoded Russian text.
 - pymodbus 3.10+ compatibility fix (`device_id=` vs `slave=` auto-detection).
 
 ## Installation via HACS
@@ -36,41 +46,9 @@ units (OEM-manufactured by SALDA, MCB 1.27 controller) over Modbus TCP.
 4. Settings → Devices & Services → **Add Integration** → search "AlpicAir".
 5. Enter gateway IP, Modbus TCP port (default 502), slave ID (default 1).
 
-## Entities created
-
-| Platform | Entity | Notes |
-|---|---|---|
-| select | Режим вентиляции | Building protection / Economy / Comfort / Intensive boost |
-| button | Выключить (Standby) / Вернуться в предыдущий режим | |
-| number | Целевая температура | Comfort setpoint slider, 15-25°C |
-| number | Расход приток/вытяжка, ступень 1-4 | Fan speed % presets (config category) |
-| number | Ночное охлаждение: время начала/окончания, пороги t, уставка притока | 8 entities (config category) |
-| sensor | Режим системы / Детальное состояние | |
-| sensor | Температура притока/вытяжки/выброса/наружного воздуха | °C |
-| sensor | Расход приток/вытяжка, факт. ступень 1-4 | m³/h, measured, read-only |
-| sensor | Осталось дней до замены фильтров / давление фильтров / КПД | |
-| sensor | Количество активных ошибок / Текущие ошибки вентиляции | full list in attributes |
-| sensor | Ночное охлаждение сейчас | Активно / Не активно |
-| switch | Защита от сухости, ночное охлаждение (вкл/выкл), рециркуляция, контроль по влажности | |
-
-## Register map (key addresses)
-
-| Function | Address | Register type |
-|---|---|---|
-| System mode | Holding 1 | R/W |
-| Comfort setpoint | Holding 2 | R/W (x0.1 °C) |
-| Night cooling settings | Holding 25-32 | R/W |
-| Fan speed presets 1-4 (supply/extract) | Holding 450-459 | R/W (x0.1 %) |
-| Intensive air flow boost | Coil 5 | R/W |
-| Night cooling enable | Coil 4 | R/W |
-| Supply/extract/exhaust/outdoor temperature | Input 18-21 | R (x0.1 °C, signed) |
-| Measured air flow per speed step (supply) | Input 77-80 | R (m3/h) |
-| Measured air flow per speed step (extract) | Input 83-86 | R (m3/h) |
-| Active alarms count / Filters days left | Input 28 / 30 | R |
-| Supply/extract filter pressure / HX pressure | Input 112 / 115 / 118 | R (Pa) |
-| Heat transfer efficiency | Input 125 | R (%) |
-| Any critical alarm / any warning / night cooling active | Discrete 188 / 189 / 209 | R |
-| Individual alarm/warning bits | Discrete 1-72 | R (decoded to Russian text) |
+If you already have the integration installed and are hitting the "Modbus
+device returned an error response" error, update to this version via HACS,
+restart Home Assistant, and the config entry will retry automatically.
 
 ## Disclaimer
 

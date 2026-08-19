@@ -17,7 +17,6 @@ from .const import (
     REG_AIR_FLOW_1_SUPPLY,
     REG_NIGHT_COOLING_START_HOURS,
     IR_CURRENT_SYSTEM_STATE,
-    IR_INTENSIVE_TIME_LEFT,
     IR_1_SUPPLY_AIR_FLOW,
     IR_1_EXTRACT_AIR_FLOW,
     IR_SUPPLY_FILTER_PRESSURE,
@@ -31,12 +30,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _device_kwarg_name() -> str:
-    """Return 'device_id' or 'slave' depending on the installed pymodbus version.
-
-    pymodbus >= 3.10.0 renamed the `slave=` keyword argument to `device_id=`
-    on all client read/write calls. Resolving this at runtime keeps the
-    integration working across whatever pymodbus version is installed.
-    """
+    """Return 'device_id' or 'slave' depending on the installed pymodbus version."""
     try:
         if version.parse(pymodbus.__version__) >= version.parse("3.10.0"):
             return "device_id"
@@ -70,14 +64,12 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
         kw = {self._device_kwarg: self._slave}
 
         try:
-            # Holding: mode/setpoint/air flow % (1-3), night cooling settings (25-32)
             holding_main = await self._client.read_holding_registers(
                 address=REG_SYSTEM_MODE, count=3, **kw
             )
             holding_night_cooling = await self._client.read_holding_registers(
                 address=REG_NIGHT_COOLING_START_HOURS, count=8, **kw
             )
-            # Holding: 4-speed fan presets, supply (450-453) and extract (456-459)
             fan_presets_supply = await self._client.read_holding_registers(
                 address=REG_AIR_FLOW_1_SUPPLY, count=4, **kw
             )
@@ -85,34 +77,33 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
                 address=REG_AIR_FLOW_1_SUPPLY + 6, count=4, **kw
             )
 
-            # Coils: auxiliary boolean settings
             coils = await self._client.read_coils(
                 address=COIL_DRYNESS_PROTECTION, count=6, **kw
             )
 
-            # Input registers: live temperatures, filters, efficiency, alarms count (1-31)
             ir_block1 = await self._client.read_input_registers(
                 address=IR_CURRENT_SYSTEM_STATE, count=31, **kw
             )
-            # Input registers: measured air flow per speed step, supply (77-80)
             ir_supply_flows = await self._client.read_input_registers(
                 address=IR_1_SUPPLY_AIR_FLOW, count=4, **kw
             )
-            # Input registers: measured air flow per speed step, extract (83-86)
             ir_extract_flows = await self._client.read_input_registers(
                 address=IR_1_EXTRACT_AIR_FLOW, count=4, **kw
             )
-            # Input registers: filter pressures, HX pressure, after-HX temp, efficiency (112-125)
             ir_block2 = await self._client.read_input_registers(
                 address=IR_SUPPLY_FILTER_PRESSURE, count=14, **kw
             )
 
-            # Discrete inputs: critical alarm / warning / night cooling active summary bits
+            # Discrete inputs: each group is a separate short read, because the
+            # 190-199 range between them is not fully defined and some Modbus
+            # servers (including this SALDA controller) return an exception
+            # response for the whole request if it spans undefined addresses.
             discretes = await self._client.read_discrete_inputs(
-                address=DI_CRITICAL_ALARM, count=22, **kw
-            )  # covers 188..209 (critical alarm, warning, ..., night cooling active)
-
-            # Discrete inputs: full alarm list block (address 1..72) for detailed messages
+                address=DI_CRITICAL_ALARM, count=2, **kw
+            )
+            night_cooling_discrete = await self._client.read_discrete_inputs(
+                address=DI_NIGHT_COOLING_FUNCTION, count=1, **kw
+            )
             alarm_bits = await self._client.read_discrete_inputs(
                 address=1, count=72, **kw
             )
@@ -121,7 +112,8 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
 
         for resp in (
             holding_main, holding_night_cooling, fan_presets_supply, fan_presets_extract,
-            coils, ir_block1, ir_supply_flows, ir_extract_flows, ir_block2, discretes, alarm_bits,
+            coils, ir_block1, ir_supply_flows, ir_extract_flows, ir_block2,
+            discretes, night_cooling_discrete, alarm_bits,
         ):
             if resp.isError():
                 raise UpdateFailed("Modbus device returned an error response")
@@ -129,7 +121,7 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
         system_mode, comfort_raw, air_flow_percent = holding_main.registers
         coil_bits = coils.bits
 
-        nc = holding_night_cooling.registers  # index 0 -> address 25
+        nc = holding_night_cooling.registers
         night_cooling_start_hours = nc[0]
         night_cooling_start_mins = nc[1]
         night_cooling_stop_hours = nc[2]
@@ -139,31 +131,29 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
         night_cooling_start_outdoor = self._to_signed16(nc[6]) / 10.0
         night_cooling_setpoint = self._to_signed16(nc[7]) / 10.0
 
-        ir1 = ir_block1.registers  # index 0 -> address 1 (IR_CURRENT_SYSTEM_STATE)
+        ir1 = ir_block1.registers
         current_system_state = ir1[0]
-        intensive_time_left = ir1[12]                                # addr 13
-        required_supply_temp = self._to_signed16(ir1[16]) / 10.0     # addr 17
-        supply_temp = self._to_signed16(ir1[17]) / 10.0              # addr 18
-        extract_temp = self._to_signed16(ir1[18]) / 10.0             # addr 19
-        exhaust_temp = self._to_signed16(ir1[19]) / 10.0             # addr 20
-        outdoor_temp = self._to_signed16(ir1[20]) / 10.0             # addr 21
-        active_alarms_count = ir1[27]                                # addr 28
-        filters_days_left = ir1[29]                                  # addr 30
+        intensive_time_left = ir1[12]
+        required_supply_temp = self._to_signed16(ir1[16]) / 10.0
+        supply_temp = self._to_signed16(ir1[17]) / 10.0
+        extract_temp = self._to_signed16(ir1[18]) / 10.0
+        exhaust_temp = self._to_signed16(ir1[19]) / 10.0
+        outdoor_temp = self._to_signed16(ir1[20]) / 10.0
+        active_alarms_count = ir1[27]
+        filters_days_left = ir1[29]
 
-        ir2 = ir_block2.registers  # index 0 -> address 112 (IR_SUPPLY_FILTER_PRESSURE)
-        supply_filter_pressure = ir2[0]     # addr 112
-        extract_filter_pressure = ir2[3]    # addr 115
-        heat_exchanger_pressure = ir2[6]    # addr 118
-        heat_transfer_efficiency = ir2[13]  # addr 125
+        ir2 = ir_block2.registers
+        supply_filter_pressure = ir2[0]
+        extract_filter_pressure = ir2[3]
+        heat_exchanger_pressure = ir2[6]
+        heat_transfer_efficiency = ir2[13]
 
         active_alarm_codes = [i + 1 for i, bit in enumerate(alarm_bits.bits[:72]) if bit]
         active_alarm_texts = [
             ALARM_MESSAGES.get(code, f"Неизвестная ошибка #{code}") for code in active_alarm_codes
         ]
 
-        # discretes: index 0 -> address 188 (critical alarm), 1 -> 189 (warning), ...
-        # address 209 (night cooling active) is at offset 209-188 = 21
-        night_cooling_active = bool(discretes.bits[21]) if len(discretes.bits) > 21 else False
+        night_cooling_active = bool(night_cooling_discrete.bits[0])
 
         return {
             "system_mode": system_mode,
@@ -221,7 +211,6 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
 
     @staticmethod
     def _to_signed16(value: int) -> int:
-        """Convert an unsigned 16-bit register value to signed (temperatures can be negative)."""
         return value - 65536 if value > 32767 else value
 
     async def async_write_system_mode(self, value: int) -> None:

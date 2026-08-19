@@ -8,26 +8,13 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
-    MIN_TEMP,
-    MAX_TEMP,
-    TEMP_STEP,
-    REG_AIR_FLOW_1_SUPPLY,
-    REG_AIR_FLOW_2_SUPPLY,
-    REG_AIR_FLOW_3_SUPPLY,
-    REG_AIR_FLOW_4_SUPPLY,
-    REG_AIR_FLOW_1_EXTRACT,
-    REG_AIR_FLOW_2_EXTRACT,
-    REG_AIR_FLOW_3_EXTRACT,
-    REG_AIR_FLOW_4_EXTRACT,
-    REG_NIGHT_COOLING_START_HOURS,
-    REG_NIGHT_COOLING_START_MINS,
-    REG_NIGHT_COOLING_STOP_HOURS,
-    REG_NIGHT_COOLING_STOP_MINS,
-    REG_NIGHT_COOLING_START_EXTRACT,
-    REG_NIGHT_COOLING_STOP_EXTRACT,
-    REG_NIGHT_COOLING_START_OUTDOOR,
-    REG_NIGHT_COOLING_SETPOINT,
+    DOMAIN, MIN_TEMP, MAX_TEMP, TEMP_STEP,
+    REG_AIR_FLOW_1_SUPPLY, REG_AIR_FLOW_2_SUPPLY, REG_AIR_FLOW_3_SUPPLY, REG_AIR_FLOW_4_SUPPLY,
+    REG_AIR_FLOW_1_EXTRACT, REG_AIR_FLOW_2_EXTRACT, REG_AIR_FLOW_3_EXTRACT, REG_AIR_FLOW_4_EXTRACT,
+    REG_NIGHT_COOLING_START_HOURS, REG_NIGHT_COOLING_START_MINS,
+    REG_NIGHT_COOLING_STOP_HOURS, REG_NIGHT_COOLING_STOP_MINS,
+    REG_NIGHT_COOLING_START_EXTRACT, REG_NIGHT_COOLING_STOP_EXTRACT,
+    REG_NIGHT_COOLING_START_OUTDOOR, REG_NIGHT_COOLING_SETPOINT,
 )
 
 FAN_PRESETS = [
@@ -44,12 +31,8 @@ FAN_PRESETS = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-
     entities = [AlpicAirComfortSetpointNumber(coordinator, entry)]
-    entities += [
-        AlpicAirFanPresetNumber(coordinator, entry, key, address, name, icon)
-        for key, address, name, icon in FAN_PRESETS
-    ]
+    entities += [AlpicAirFanPresetNumber(coordinator, entry, k, a, n, i) for k, a, n, i in FAN_PRESETS]
     entities += [
         AlpicAirNightCoolingStartHours(coordinator, entry),
         AlpicAirNightCoolingStartMins(coordinator, entry),
@@ -79,8 +62,6 @@ class _Base(CoordinatorEntity, NumberEntity):
 
 
 class AlpicAirComfortSetpointNumber(_Base):
-    """Slider to change the Comfort mode target temperature."""
-
     _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = "°C"
     _attr_native_min_value = MIN_TEMP
@@ -103,12 +84,6 @@ class AlpicAirComfortSetpointNumber(_Base):
 
 
 class AlpicAirFanPresetNumber(_Base):
-    """Configures the % airflow for one of the 4 fixed fan speed presets.
-
-    Registers 450-459 store the value as 0..1000 representing 0.0-100.0%
-    (x0.1 scale), matching the MCB 1.27 register table convention.
-    """
-
     _attr_native_unit_of_measurement = "%"
     _attr_native_min_value = 0.0
     _attr_native_max_value = 100.0
@@ -223,8 +198,7 @@ class AlpicAirNightCoolingStartExtract(_NightCoolingTempBase):
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "night_cooling_start_extract",
-                          REG_NIGHT_COOLING_START_EXTRACT,
-                          "Ночное охлаждение: t вытяжки для старта", "mdi:thermometer")
+                          REG_NIGHT_COOLING_START_EXTRACT, "Ночное охлаждение: t вытяжки для старта", "mdi:thermometer")
 
 
 class AlpicAirNightCoolingStopExtract(_NightCoolingTempBase):
@@ -233,8 +207,7 @@ class AlpicAirNightCoolingStopExtract(_NightCoolingTempBase):
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "night_cooling_stop_extract",
-                          REG_NIGHT_COOLING_STOP_EXTRACT,
-                          "Ночное охлаждение: t вытяжки для стопа", "mdi:thermometer")
+                          REG_NIGHT_COOLING_STOP_EXTRACT, "Ночное охлаждение: t вытяжки для стопа", "mdi:thermometer")
 
 
 class AlpicAirNightCoolingStartOutdoor(_NightCoolingTempBase):
@@ -243,8 +216,7 @@ class AlpicAirNightCoolingStartOutdoor(_NightCoolingTempBase):
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "night_cooling_start_outdoor",
-                          REG_NIGHT_COOLING_START_OUTDOOR,
-                          "Ночное охлаждение: t наружная для стопа", "mdi:thermometer")
+                          REG_NIGHT_COOLING_START_OUTDOOR, "Ночное охлаждение: t наружная для стопа", "mdi:thermometer")
 
 
 class AlpicAirNightCoolingSetpoint(_NightCoolingTempBase):
@@ -253,5 +225,4 @@ class AlpicAirNightCoolingSetpoint(_NightCoolingTempBase):
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "night_cooling_setpoint",
-                          REG_NIGHT_COOLING_SETPOINT,
-                          "Ночное охлаждение: уставка притока", "mdi:thermometer")
+                          REG_NIGHT_COOLING_SETPOINT, "Ночное охлаждение: уставка притока", "mdi:thermometer")

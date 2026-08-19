@@ -15,12 +15,7 @@ OPTION_COMFORT = "Комфорт"
 OPTION_INTENSIVE = "Интенсивный обдув"
 
 MODE_OPTIONS = [OPTION_PROTECTION, OPTION_ECONOMY, OPTION_COMFORT, OPTION_INTENSIVE]
-
-MODE_TO_REGISTER_VALUE = {
-    OPTION_PROTECTION: 1,
-    OPTION_ECONOMY: 2,
-    OPTION_COMFORT: 3,
-}
+MODE_TO_REGISTER_VALUE = {OPTION_PROTECTION: 1, OPTION_ECONOMY: 2, OPTION_COMFORT: 3}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
@@ -29,12 +24,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class AlpicAirModeSelect(CoordinatorEntity, SelectEntity):
-    """Dropdown to pick Building protection / Economy / Comfort / Intensive boost.
-
-    'Off' (Standby) is intentionally NOT included here - it is handled by a
-    separate dedicated button so it stays a single, unambiguous action.
-    """
-
     _attr_icon = "mdi:fan"
     _attr_options = MODE_OPTIONS
 
@@ -67,5 +56,4 @@ class AlpicAirModeSelect(CoordinatorEntity, SelectEntity):
         if option == OPTION_INTENSIVE:
             await self.coordinator.async_write_coil(COIL_INTENSIVE_AIR_FLOW_BOOST, True)
             return
-        value = MODE_TO_REGISTER_VALUE[option]
-        await self.coordinator.async_write_system_mode(value)
+        await self.coordinator.async_write_system_mode(MODE_TO_REGISTER_VALUE[option])

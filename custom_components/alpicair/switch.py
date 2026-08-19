@@ -1,9 +1,4 @@
-"""Switch platform for AlpicAir boolean coils (auxiliary settings only).
-
-Note: operating modes (Building protection / Economy / Comfort / Intensive
-boost) are NOT represented as switches - they live in select.py as a single
-dropdown, and Off lives in button.py as a dedicated button.
-"""
+"""Switch platform for AlpicAir boolean coils (auxiliary settings only)."""
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
@@ -13,19 +8,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
-    COIL_DRYNESS_PROTECTION,
-    COIL_NIGHT_COOLING_FUNCTION,
-    COIL_FULL_RECIRC_BUILDING_PROTECTION,
-    COIL_FULL_RECIRC_ECONOMY,
-    COIL_AIR_FLOW_CONTROL_BY_RH,
+    DOMAIN, COIL_DRYNESS_PROTECTION, COIL_NIGHT_COOLING_FUNCTION,
+    COIL_FULL_RECIRC_BUILDING_PROTECTION, COIL_FULL_RECIRC_ECONOMY, COIL_AIR_FLOW_CONTROL_BY_RH,
 )
 
 SWITCHES = [
     ("dryness_protection", COIL_DRYNESS_PROTECTION, "Защита от сухости", "mdi:water-percent"),
     ("night_cooling", COIL_NIGHT_COOLING_FUNCTION, "Ночное охлаждение (включено)", "mdi:weather-night"),
-    ("full_recirc_building_protection", COIL_FULL_RECIRC_BUILDING_PROTECTION,
-     "Рециркуляция в режиме защиты", "mdi:recycle"),
+    ("full_recirc_building_protection", COIL_FULL_RECIRC_BUILDING_PROTECTION, "Рециркуляция в режиме защиты", "mdi:recycle"),
     ("full_recirc_economy", COIL_FULL_RECIRC_ECONOMY, "Рециркуляция в эконом-режиме", "mdi:recycle"),
     ("air_flow_by_rh", COIL_AIR_FLOW_CONTROL_BY_RH, "Расход воздуха по влажности", "mdi:water"),
 ]
@@ -33,12 +23,7 @@ SWITCHES = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [
-            AlpicAirCoilSwitch(coordinator, entry, key, address, name, icon)
-            for key, address, name, icon in SWITCHES
-        ]
-    )
+    async_add_entities([AlpicAirCoilSwitch(coordinator, entry, k, a, n, i) for k, a, n, i in SWITCHES])
 
 
 class AlpicAirCoilSwitch(CoordinatorEntity, SwitchEntity):
