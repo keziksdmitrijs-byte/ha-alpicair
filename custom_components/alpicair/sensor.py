@@ -9,41 +9,57 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, SYSTEM_MODES, MODE_LABELS_RU, SYSTEM_STATE_MAP
 
+MEASURED_FLOW_SENSORS = [
+    ("measured_supply_flow_1", "Расход приток, факт. ступень 1 (Защита здания)"),
+    ("measured_supply_flow_2", "Расход приток, факт. ступень 2 (Эконом)"),
+    ("measured_supply_flow_3", "Расход приток, факт. ступень 3 (Комфорт)"),
+    ("measured_supply_flow_4", "Расход приток, факт. ступень 4 (Форсаж)"),
+    ("measured_extract_flow_1", "Расход вытяжка, факт. ступень 1 (Защита здания)"),
+    ("measured_extract_flow_2", "Расход вытяжка, факт. ступень 2 (Эконом)"),
+    ("measured_extract_flow_3", "Расход вытяжка, факт. ступень 3 (Комфорт)"),
+    ("measured_extract_flow_4", "Расход вытяжка, факт. ступень 4 (Форсаж)"),
+]
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [
-            AlpicAirModeSensor(coordinator, entry),
-            AlpicAirSystemStateSensor(coordinator, entry),
-            AlpicAirComfortSetpointSensor(coordinator, entry),
-            AlpicAirAirFlowSensor(coordinator, entry),
-            AlpicAirIntensiveTimeLeftSensor(coordinator, entry),
-            # --- Temperatures ---
-            AlpicAirTemperatureSensor(coordinator, entry, "supply_air_temperature",
-                                       "Температура притока", "mdi:thermometer"),
-            AlpicAirTemperatureSensor(coordinator, entry, "extract_air_temperature",
-                                       "Температура вытяжки", "mdi:thermometer"),
-            AlpicAirTemperatureSensor(coordinator, entry, "exhaust_air_temperature",
-                                       "Температура выброса", "mdi:thermometer"),
-            AlpicAirTemperatureSensor(coordinator, entry, "outdoor_air_temperature",
-                                       "Температура наружного воздуха", "mdi:thermometer"),
-            AlpicAirTemperatureSensor(coordinator, entry, "required_supply_temperature",
-                                       "Требуемая температура притока", "mdi:thermometer-lines"),
-            # --- Filters ---
-            AlpicAirFiltersDaysLeftSensor(coordinator, entry),
-            AlpicAirPressureSensor(coordinator, entry, "supply_filter_pressure",
-                                    "Давление приточного фильтра", "mdi:air-filter"),
-            AlpicAirPressureSensor(coordinator, entry, "extract_filter_pressure",
-                                    "Давление вытяжного фильтра", "mdi:air-filter"),
-            AlpicAirPressureSensor(coordinator, entry, "heat_exchanger_pressure",
-                                    "Давление теплообменника", "mdi:gauge"),
-            AlpicAirEfficiencySensor(coordinator, entry),
-            # --- Errors / diagnostics ---
-            AlpicAirActiveAlarmsCountSensor(coordinator, entry),
-            AlpicAirActiveAlarmsTextSensor(coordinator, entry),
-        ]
-    )
+    entities = [
+        AlpicAirModeSensor(coordinator, entry),
+        AlpicAirSystemStateSensor(coordinator, entry),
+        AlpicAirComfortSetpointSensor(coordinator, entry),
+        AlpicAirAirFlowSensor(coordinator, entry),
+        AlpicAirIntensiveTimeLeftSensor(coordinator, entry),
+        # --- Temperatures ---
+        AlpicAirTemperatureSensor(coordinator, entry, "supply_air_temperature",
+                                   "Температура притока", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "extract_air_temperature",
+                                   "Температура вытяжки", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "exhaust_air_temperature",
+                                   "Температура выброса", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "outdoor_air_temperature",
+                                   "Температура наружного воздуха", "mdi:thermometer"),
+        AlpicAirTemperatureSensor(coordinator, entry, "required_supply_temperature",
+                                   "Требуемая температура притока", "mdi:thermometer-lines"),
+        # --- Filters ---
+        AlpicAirFiltersDaysLeftSensor(coordinator, entry),
+        AlpicAirPressureSensor(coordinator, entry, "supply_filter_pressure",
+                                "Давление приточного фильтра", "mdi:air-filter"),
+        AlpicAirPressureSensor(coordinator, entry, "extract_filter_pressure",
+                                "Давление вытяжного фильтра", "mdi:air-filter"),
+        AlpicAirPressureSensor(coordinator, entry, "heat_exchanger_pressure",
+                                "Давление теплообменника", "mdi:gauge"),
+        AlpicAirEfficiencySensor(coordinator, entry),
+        # --- Errors / diagnostics ---
+        AlpicAirActiveAlarmsCountSensor(coordinator, entry),
+        AlpicAirActiveAlarmsTextSensor(coordinator, entry),
+        # --- Night cooling status ---
+        AlpicAirNightCoolingActiveSensor(coordinator, entry),
+    ]
+    entities += [
+        AlpicAirMeasuredFlowSensor(coordinator, entry, key, name)
+        for key, name in MEASURED_FLOW_SENSORS
+    ]
+    async_add_entities(entities)
 
 
 class _Base(CoordinatorEntity, SensorEntity):
@@ -134,7 +150,7 @@ class AlpicAirIntensiveTimeLeftSensor(_Base):
 
     @property
     def native_value(self):
-        return self.coordinator.data["intensive_time_left"] if "intensive_time_left" in self.coordinator.data else None
+        return self.coordinator.data.get("intensive_time_left")
 
 
 class AlpicAirTemperatureSensor(_Base):
@@ -240,3 +256,34 @@ class AlpicAirActiveAlarmsTextSensor(_Base):
             "critical_alarm": self.coordinator.data.get("critical_alarm"),
             "warning": self.coordinator.data.get("warning"),
         }
+
+
+class AlpicAirNightCoolingActiveSensor(_Base):
+    _attr_icon = "mdi:weather-night"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_night_cooling_active"
+        self._attr_name = "Ночное охлаждение сейчас"
+
+    @property
+    def native_value(self):
+        return "Активно" if self.coordinator.data.get("night_cooling_active") else "Не активно"
+
+
+class AlpicAirMeasuredFlowSensor(_Base):
+    """Measured air flow (m3/h) for a given fixed speed step, from input registers 77-86."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "m³/h"
+    _attr_icon = "mdi:air-filter"
+
+    def __init__(self, coordinator, entry, data_key: str, name: str) -> None:
+        super().__init__(coordinator, entry)
+        self._data_key = data_key
+        self._attr_unique_id = f"{entry.entry_id}_{data_key}"
+        self._attr_name = name
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get(self._data_key)

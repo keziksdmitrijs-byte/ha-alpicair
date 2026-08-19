@@ -2,10 +2,7 @@
 
 Note: operating modes (Building protection / Economy / Comfort / Intensive
 boost) are NOT represented as switches - they live in select.py as a single
-dropdown, and Off lives in button.py as a dedicated button. Putting a
-multi-valued register behind several independent switches was a known
-pitfall in similar community Modbus packages (multiple switches could show
-"on" simultaneously), so it is intentionally avoided here.
+dropdown, and Off lives in button.py as a dedicated button.
 """
 from __future__ import annotations
 
@@ -26,7 +23,7 @@ from .const import (
 
 SWITCHES = [
     ("dryness_protection", COIL_DRYNESS_PROTECTION, "Защита от сухости", "mdi:water-percent"),
-    ("night_cooling", COIL_NIGHT_COOLING_FUNCTION, "Ночное охлаждение", "mdi:weather-night"),
+    ("night_cooling", COIL_NIGHT_COOLING_FUNCTION, "Ночное охлаждение (включено)", "mdi:weather-night"),
     ("full_recirc_building_protection", COIL_FULL_RECIRC_BUILDING_PROTECTION,
      "Рециркуляция в режиме защиты", "mdi:recycle"),
     ("full_recirc_economy", COIL_FULL_RECIRC_ECONOMY, "Рециркуляция в эконом-режиме", "mdi:recycle"),

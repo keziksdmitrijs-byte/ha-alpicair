@@ -19,17 +19,28 @@ REG_COMFORT_SETPOINT = 2               # 160..300 (x0.1 C)
 REG_AIR_FLOW_PERCENT = 3               # 0..100 %
 REG_ECONOMY_SETPOINT = 4               # 0:EnergySaving, 160..300 (x0.1 C)
 REG_BUILDING_PROTECTION_SETPOINT = 6   # 0:EnergySaving, 160..300 (x0.1 C)
+REG_INTENSIVE_TIME_SET = 14            # 0-18000 s, intensive boost duration
 REG_INTENSIVE_TIME_LEFT = 107          # seconds, read-only via holding
 
+# Night cooling settings, Holding registers (User level)
+REG_NIGHT_COOLING_START_HOURS = 25      # 0-23
+REG_NIGHT_COOLING_START_MINS = 26       # 0-59
+REG_NIGHT_COOLING_STOP_HOURS = 27       # 0-23
+REG_NIGHT_COOLING_STOP_MINS = 28        # 0-59
+REG_NIGHT_COOLING_START_EXTRACT = 29    # 130-300 (x0.1 C) extract temp to start
+REG_NIGHT_COOLING_STOP_EXTRACT = 30     # 130-300 (x0.1 C) extract temp to stop
+REG_NIGHT_COOLING_START_OUTDOOR = 31    # 0-300 (x0.1 C) outdoor temp to stop
+REG_NIGHT_COOLING_SETPOINT = 32         # 0-300 (x0.1 C) supply air setpoint
+
 # Air flow adjustment (4-speed presets, % of nominal), Adjuster level
-REG_AIR_FLOW_1_SUPPLY = 450
-REG_AIR_FLOW_2_SUPPLY = 451
-REG_AIR_FLOW_3_SUPPLY = 452
-REG_AIR_FLOW_4_SUPPLY = 453
-REG_AIR_FLOW_1_EXTRACT = 456
-REG_AIR_FLOW_2_EXTRACT = 457
-REG_AIR_FLOW_3_EXTRACT = 458
-REG_AIR_FLOW_4_EXTRACT = 459
+REG_AIR_FLOW_1_SUPPLY = 450   # Building protection
+REG_AIR_FLOW_2_SUPPLY = 451   # Economy
+REG_AIR_FLOW_3_SUPPLY = 452   # Comfort
+REG_AIR_FLOW_4_SUPPLY = 453   # Boost / Intensive
+REG_AIR_FLOW_1_EXTRACT = 456  # Building protection
+REG_AIR_FLOW_2_EXTRACT = 457  # Economy
+REG_AIR_FLOW_3_EXTRACT = 458  # Comfort
+REG_AIR_FLOW_4_EXTRACT = 459  # Boost / Intensive
 
 # --- Coils (0x01/0x05), Read/Write ---
 COIL_DRYNESS_PROTECTION = 3
@@ -38,7 +49,6 @@ COIL_INTENSIVE_AIR_FLOW_BOOST = 5
 COIL_FULL_RECIRC_BUILDING_PROTECTION = 6
 COIL_FULL_RECIRC_ECONOMY = 7
 COIL_AIR_FLOW_CONTROL_BY_RH = 8
-COIL_ALARMS_RESET = 202  # note: HR_ALARMS_RESET is holding reg 202, alarms reset via holding write
 COIL_GO_BACK_PREVIOUS_MODE = 53
 
 # --- Input registers (0x04), Read only ---
@@ -57,6 +67,17 @@ IR_EXTRACT_AIR_RH = 24              # x0.1 %
 IR_EXTRACT_AIR_CO2 = 25             # ppm
 IR_ACTIVE_ALARMS_COUNT = 28         # 0-100
 IR_FILTERS_TIMER_DAYS_LEFT = 30     # 1-365 days
+
+# Measured air flow per fixed speed step (m3/h), read-only
+IR_1_SUPPLY_AIR_FLOW = 77    # Building protection
+IR_2_SUPPLY_AIR_FLOW = 78    # Economy
+IR_3_SUPPLY_AIR_FLOW = 79    # Comfort
+IR_4_SUPPLY_AIR_FLOW = 80    # Boost / Intensive
+IR_1_EXTRACT_AIR_FLOW = 83   # Building protection
+IR_2_EXTRACT_AIR_FLOW = 84   # Economy
+IR_3_EXTRACT_AIR_FLOW = 85   # Comfort
+IR_4_EXTRACT_AIR_FLOW = 86   # Boost / Intensive
+
 IR_SUPPLY_FILTER_PRESSURE = 112     # Pa
 IR_EXTRACT_FILTER_PRESSURE = 115    # Pa
 IR_HEAT_EXCHANGER_PRESSURE = 118    # Pa
@@ -66,6 +87,7 @@ IR_HEAT_TRANSFER_EFFICIENCY = 125   # 0-100 %
 # --- Discrete inputs (0x02), Read only ---
 DI_CRITICAL_ALARM = 188   # any active critical alarm
 DI_WARNING = 189          # any active warning
+DI_NIGHT_COOLING_FUNCTION = 209  # night cooling currently active
 
 # Individual alarm/warning bits (address -> human message), from Alarm list table
 ALARM_MESSAGES = {
@@ -165,7 +187,6 @@ MODE_LABELS_RU = {
     "economy": "Эконом",
     "comfort": "Комфорт",
 }
-MODE_LABELS_RU_REVERSE = {v: k for k, v in MODE_LABELS_RU.items()}
 
 MIN_TEMP = 15.0
 MAX_TEMP = 25.0

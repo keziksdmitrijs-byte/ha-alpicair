@@ -15,15 +15,15 @@ from .const import (
     REG_SYSTEM_MODE,
     REG_COMFORT_SETPOINT,
     REG_AIR_FLOW_1_SUPPLY,
+    REG_NIGHT_COOLING_START_HOURS,
     IR_CURRENT_SYSTEM_STATE,
     IR_INTENSIVE_TIME_LEFT,
-    IR_SUPPLY_AIR_TEMPERATURE,
-    IR_ACTIVE_ALARMS_COUNT,
-    IR_FILTERS_TIMER_DAYS_LEFT,
+    IR_1_SUPPLY_AIR_FLOW,
+    IR_1_EXTRACT_AIR_FLOW,
     IR_SUPPLY_FILTER_PRESSURE,
-    IR_HEAT_TRANSFER_EFFICIENCY,
     COIL_DRYNESS_PROTECTION,
     DI_CRITICAL_ALARM,
+    DI_NIGHT_COOLING_FUNCTION,
     ALARM_MESSAGES,
 )
 
@@ -70,12 +70,19 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
         kw = {self._device_kwarg: self._slave}
 
         try:
-            # Holding registers: mode, comfort setpoint, air flow %, 4-speed presets
-            holding = await self._client.read_holding_registers(
+            # Holding: mode/setpoint/air flow % (1-3), night cooling settings (25-32)
+            holding_main = await self._client.read_holding_registers(
                 address=REG_SYSTEM_MODE, count=3, **kw
             )
+            holding_night_cooling = await self._client.read_holding_registers(
+                address=REG_NIGHT_COOLING_START_HOURS, count=8, **kw
+            )
+            # Holding: 4-speed fan presets, supply (450-453) and extract (456-459)
             fan_presets_supply = await self._client.read_holding_registers(
                 address=REG_AIR_FLOW_1_SUPPLY, count=4, **kw
+            )
+            fan_presets_extract = await self._client.read_holding_registers(
+                address=REG_AIR_FLOW_1_SUPPLY + 6, count=4, **kw
             )
 
             # Coils: auxiliary boolean settings
@@ -83,18 +90,27 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
                 address=COIL_DRYNESS_PROTECTION, count=6, **kw
             )
 
-            # Input registers: live temperatures, filters, efficiency, alarms count
+            # Input registers: live temperatures, filters, efficiency, alarms count (1-31)
             ir_block1 = await self._client.read_input_registers(
                 address=IR_CURRENT_SYSTEM_STATE, count=31, **kw
-            )  # covers addr 1..31 (state, mode, air flow, temps, RH, CO2, alarms count, filter days)
+            )
+            # Input registers: measured air flow per speed step, supply (77-80)
+            ir_supply_flows = await self._client.read_input_registers(
+                address=IR_1_SUPPLY_AIR_FLOW, count=4, **kw
+            )
+            # Input registers: measured air flow per speed step, extract (83-86)
+            ir_extract_flows = await self._client.read_input_registers(
+                address=IR_1_EXTRACT_AIR_FLOW, count=4, **kw
+            )
+            # Input registers: filter pressures, HX pressure, after-HX temp, efficiency (112-125)
             ir_block2 = await self._client.read_input_registers(
                 address=IR_SUPPLY_FILTER_PRESSURE, count=14, **kw
-            )  # covers addr 112..125 (filter pressures, HX pressure, after-HX temp, efficiency)
-
-            # Discrete inputs: any critical alarm / any warning summary bits
-            discretes = await self._client.read_discrete_inputs(
-                address=DI_CRITICAL_ALARM, count=2, **kw
             )
+
+            # Discrete inputs: critical alarm / warning / night cooling active summary bits
+            discretes = await self._client.read_discrete_inputs(
+                address=DI_CRITICAL_ALARM, count=22, **kw
+            )  # covers 188..209 (critical alarm, warning, ..., night cooling active)
 
             # Discrete inputs: full alarm list block (address 1..72) for detailed messages
             alarm_bits = await self._client.read_discrete_inputs(
@@ -103,15 +119,29 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
         except Exception as err:  # noqa: BLE001
             raise UpdateFailed(f"Modbus read failed: {err}") from err
 
-        for resp in (holding, fan_presets_supply, coils, ir_block1, ir_block2, discretes, alarm_bits):
+        for resp in (
+            holding_main, holding_night_cooling, fan_presets_supply, fan_presets_extract,
+            coils, ir_block1, ir_supply_flows, ir_extract_flows, ir_block2, discretes, alarm_bits,
+        ):
             if resp.isError():
                 raise UpdateFailed("Modbus device returned an error response")
 
-        system_mode, comfort_raw, air_flow_percent = holding.registers
+        system_mode, comfort_raw, air_flow_percent = holding_main.registers
         coil_bits = coils.bits
+
+        nc = holding_night_cooling.registers  # index 0 -> address 25
+        night_cooling_start_hours = nc[0]
+        night_cooling_start_mins = nc[1]
+        night_cooling_stop_hours = nc[2]
+        night_cooling_stop_mins = nc[3]
+        night_cooling_start_extract = self._to_signed16(nc[4]) / 10.0
+        night_cooling_stop_extract = self._to_signed16(nc[5]) / 10.0
+        night_cooling_start_outdoor = self._to_signed16(nc[6]) / 10.0
+        night_cooling_setpoint = self._to_signed16(nc[7]) / 10.0
 
         ir1 = ir_block1.registers  # index 0 -> address 1 (IR_CURRENT_SYSTEM_STATE)
         current_system_state = ir1[0]
+        intensive_time_left = ir1[12]                                # addr 13
         required_supply_temp = self._to_signed16(ir1[16]) / 10.0     # addr 17
         supply_temp = self._to_signed16(ir1[17]) / 10.0              # addr 18
         extract_temp = self._to_signed16(ir1[18]) / 10.0             # addr 19
@@ -119,7 +149,6 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
         outdoor_temp = self._to_signed16(ir1[20]) / 10.0             # addr 21
         active_alarms_count = ir1[27]                                # addr 28
         filters_days_left = ir1[29]                                  # addr 30
-        intensive_time_left = ir1[12]                                # addr 13
 
         ir2 = ir_block2.registers  # index 0 -> address 112 (IR_SUPPLY_FILTER_PRESSURE)
         supply_filter_pressure = ir2[0]     # addr 112
@@ -132,6 +161,10 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
             ALARM_MESSAGES.get(code, f"Неизвестная ошибка #{code}") for code in active_alarm_codes
         ]
 
+        # discretes: index 0 -> address 188 (critical alarm), 1 -> 189 (warning), ...
+        # address 209 (night cooling active) is at offset 209-188 = 21
+        night_cooling_active = bool(discretes.bits[21]) if len(discretes.bits) > 21 else False
+
         return {
             "system_mode": system_mode,
             "comfort_setpoint": comfort_raw / 10.0,
@@ -141,12 +174,33 @@ class AlpicAirCoordinator(DataUpdateCoordinator):
             "fan_preset_2_supply": fan_presets_supply.registers[1],
             "fan_preset_3_supply": fan_presets_supply.registers[2],
             "fan_preset_4_supply": fan_presets_supply.registers[3],
+            "fan_preset_1_extract": fan_presets_extract.registers[0],
+            "fan_preset_2_extract": fan_presets_extract.registers[1],
+            "fan_preset_3_extract": fan_presets_extract.registers[2],
+            "fan_preset_4_extract": fan_presets_extract.registers[3],
+            "measured_supply_flow_1": ir_supply_flows.registers[0],
+            "measured_supply_flow_2": ir_supply_flows.registers[1],
+            "measured_supply_flow_3": ir_supply_flows.registers[2],
+            "measured_supply_flow_4": ir_supply_flows.registers[3],
+            "measured_extract_flow_1": ir_extract_flows.registers[0],
+            "measured_extract_flow_2": ir_extract_flows.registers[1],
+            "measured_extract_flow_3": ir_extract_flows.registers[2],
+            "measured_extract_flow_4": ir_extract_flows.registers[3],
             "dryness_protection": coil_bits[0],
             "night_cooling": coil_bits[1],
             "intensive_boost": coil_bits[2],
             "full_recirc_building_protection": coil_bits[3],
             "full_recirc_economy": coil_bits[4],
             "air_flow_by_rh": coil_bits[5],
+            "night_cooling_start_hours": night_cooling_start_hours,
+            "night_cooling_start_mins": night_cooling_start_mins,
+            "night_cooling_stop_hours": night_cooling_stop_hours,
+            "night_cooling_stop_mins": night_cooling_stop_mins,
+            "night_cooling_start_extract": night_cooling_start_extract,
+            "night_cooling_stop_extract": night_cooling_stop_extract,
+            "night_cooling_start_outdoor": night_cooling_start_outdoor,
+            "night_cooling_setpoint": night_cooling_setpoint,
+            "night_cooling_active": night_cooling_active,
             "current_system_state": current_system_state,
             "required_supply_temperature": required_supply_temp,
             "supply_air_temperature": supply_temp,
