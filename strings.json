@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Подключение AlpicAir",
-        "description": "Modbus TCP для рекуператора AlpicAir/SALDA MCB 1.27",
+        "description": "Modbus TCP для рекуператора AlpicAir",
         "data": {
           "name": "Название",
           "host": "IP-адрес",
