@@ -1,18 +1,31 @@
+"""Select entities for AlpicAir Modbus."""
+from __future__ import annotations
+
 from homeassistant.components.select import SelectEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
-from .const import *
-async def async_setup_entry(hass,entry,add):add([ModeSelect(hass.data[DOMAIN][entry.entry_id],entry)])
-class ModeSelect(CoordinatorEntity,SelectEntity):
- _attr_name="Режим вентиляции";_attr_icon="mdi:fan";_attr_options=list(MODE_OPTIONS)
- def __init__(self,c,e):super().__init__(c);self.entry=e;self._attr_unique_id=f"{e.entry_id}_mode"
- @property
- def device_info(self):return DeviceInfo(identifiers={(DOMAIN,self.entry.entry_id)},name=self.entry.title,manufacturer="AlpicAir",model="MCB 1.27 (OEM SALDA)")
- @property
- def current_option(self):
-  if self.coordinator.data.get("intensive_boost"):return "Интенсивный обдув"
-  return MODE_NAMES.get(self.coordinator.data.get("system_mode"))
- async def async_select_option(self,option):
-  value=MODE_OPTIONS[option]
-  if value is None:await self.coordinator.write_coil(COIL_BOOST,True)
-  else:await self.coordinator.write_register(REG_SYSTEM_MODE,value)
+
+from .const import MODE_BUILDING_PROTECTION, MODE_COMFORT, MODE_ECONOMY, MODE_INTENSIVE, MODE_OPTIONS, MODE_STANDBY
+from .entity import AlpicAirEntity
+
+OPTIONS = [MODE_OPTIONS[MODE_STANDBY], MODE_OPTIONS[MODE_BUILDING_PROTECTION], MODE_OPTIONS[MODE_ECONOMY], MODE_OPTIONS[MODE_COMFORT], "Интенсивный обдув"]
+TO_VALUE = {value: key for key, value in MODE_OPTIONS.items()} | {"Интенсивный обдув": MODE_INTENSIVE}
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    async_add_entities([AlpicAirModeSelect(hass.data[entry.domain][entry.entry_id])])
+
+
+class AlpicAirModeSelect(AlpicAirEntity, SelectEntity):
+    _attr_name = "Режим"
+    _attr_options = OPTIONS
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "mode")
+
+    @property
+    def current_option(self):
+        if self.coordinator.data.get("intensive"):
+            return "Интенсивный обдув"
+        return MODE_OPTIONS.get(self.coordinator.data.get("system_mode"), "Standby")
+
+    async def async_select_option(self, option: str) -> None:
+        await self.coordinator.async_set_mode(TO_VALUE[option])

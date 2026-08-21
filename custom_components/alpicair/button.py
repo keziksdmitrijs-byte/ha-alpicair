@@ -1,11 +1,22 @@
+"""Button entities for AlpicAir Modbus."""
+from __future__ import annotations
+
 from homeassistant.components.button import ButtonEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
-from .const import *
-async def async_setup_entry(hass,entry,add):add([OffButton(hass.data[DOMAIN][entry.entry_id],entry)])
-class OffButton(CoordinatorEntity,ButtonEntity):
- _attr_name="Выключить (Standby)";_attr_icon="mdi:power"
- def __init__(self,c,e):super().__init__(c);self.entry=e;self._attr_unique_id=f"{e.entry_id}_off"
- @property
- def device_info(self):return DeviceInfo(identifiers={(DOMAIN,self.entry.entry_id)},name=self.entry.title,manufacturer="AlpicAir",model="MCB 1.27 (OEM SALDA)")
- async def async_press(self):await self.coordinator.write_register(REG_SYSTEM_MODE,0)
+
+from .const import REG_ALARMS_RESET
+from .entity import AlpicAirEntity
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    async_add_entities([AlpicAirResetErrorsButton(hass.data[entry.domain][entry.entry_id])])
+
+
+class AlpicAirResetErrorsButton(AlpicAirEntity, ButtonEntity):
+    _attr_name = "Сброс ошибок"
+    _attr_icon = "mdi:alert-outline"
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "reset_errors")
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_write_register(REG_ALARMS_RESET, 1)

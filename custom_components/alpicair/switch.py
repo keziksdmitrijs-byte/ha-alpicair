@@ -1,14 +1,47 @@
+"""Switch entities for AlpicAir Modbus."""
+from __future__ import annotations
+
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
-from .const import *
-ITEMS=[("dryness_protection",COIL_DRYNESS,"Защита от сухости"),("night_cooling_enabled",COIL_NIGHT_COOLING,"Ночное охлаждение"),("full_recirc_protection",COIL_FULL_RECIRC_PROTECTION,"Рециркуляция: защита здания"),("full_recirc_economy",COIL_FULL_RECIRC_ECONOMY,"Рециркуляция: эконом"),("flow_by_rh",COIL_FLOW_BY_RH,"Расход воздуха по влажности")]
-async def async_setup_entry(hass,entry,add):add([CoilSwitch(hass.data[DOMAIN][entry.entry_id],entry,*x) for x in ITEMS])
-class CoilSwitch(CoordinatorEntity,SwitchEntity):
- def __init__(self,c,e,key,address,name):super().__init__(c);self.entry=e;self.key=key;self.address=address;self._attr_name=name;self._attr_unique_id=f"{e.entry_id}_{key}"
- @property
- def device_info(self):return DeviceInfo(identifiers={(DOMAIN,self.entry.entry_id)},name=self.entry.title,manufacturer="AlpicAir",model="MCB 1.27 (OEM SALDA)")
- @property
- def is_on(self):return bool(self.coordinator.data.get(self.key))
- async def async_turn_on(self,**kwargs):await self.coordinator.write_coil(self.address,True)
- async def async_turn_off(self,**kwargs):await self.coordinator.write_coil(self.address,False)
+
+from .const import MODE_STANDBY
+from .entity import AlpicAirEntity
+from .const import COIL_NIGHT_COOLING_FUNCTION
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    coordinator = hass.data[entry.domain][entry.entry_id]
+    async_add_entities([AlpicAirNightCoolingSwitch(coordinator), AlpicAirStandbySwitch(coordinator)])
+
+
+class AlpicAirNightCoolingSwitch(AlpicAirEntity, SwitchEntity):
+    _attr_name = "Ночное охлаждение"
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "night_cooling")
+
+    @property
+    def is_on(self):
+        return bool(self.coordinator.data.get("night_cooling"))
+
+    async def async_turn_on(self, **kwargs):
+        await self.coordinator.async_write_coil(COIL_NIGHT_COOLING_FUNCTION, True)
+
+    async def async_turn_off(self, **kwargs):
+        await self.coordinator.async_write_coil(COIL_NIGHT_COOLING_FUNCTION, False)
+
+
+class AlpicAirStandbySwitch(AlpicAirEntity, SwitchEntity):
+    _attr_name = "Выключатель (Standby)"
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "standby")
+
+    @property
+    def is_on(self):
+        return self.coordinator.data.get("system_mode") == MODE_STANDBY
+
+    async def async_turn_on(self, **kwargs):
+        await self.coordinator.async_set_standby(True)
+
+    async def async_turn_off(self, **kwargs):
+        await self.coordinator.async_set_standby(False)

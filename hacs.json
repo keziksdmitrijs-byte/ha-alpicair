@@ -1,7 +1,4 @@
 {
-  "name": "AlpicAir Ventilation Unit",
-  "content_in_root": false,
-  "render_readme": true,
-  "homeassistant": "2024.6.0",
-  "zip_release": false
+  "name": "AlpicAir Modbus",
+  "render_readme": true
 }

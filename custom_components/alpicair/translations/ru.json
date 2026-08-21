@@ -2,18 +2,18 @@
   "config": {
     "step": {
       "user": {
-        "title": "Подключение AlpicAir",
-        "description": "Рекуператор AlpicAir/SALDA MCB 1.27 через Modbus TCP.",
+        "title": "AlpicAir Modbus",
+        "description": "Укажите параметры Modbus TCP контроллера.",
         "data": {
-          "name": "Название устройства",
+          "name": "Название",
+          "connection_type": "Тип подключения",
           "host": "IP-адрес",
           "port": "Порт",
-          "slave": "Modbus Slave ID"
+          "slave": "Slave ID",
+          "scan_interval": "Интервал опроса, секунд",
+          "address_offset": "Смещение адресации"
         }
       }
-    },
-    "abort": {
-      "already_configured": "Устройство уже настроено"
     }
   }
 }

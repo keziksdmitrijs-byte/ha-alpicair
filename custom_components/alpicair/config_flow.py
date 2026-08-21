@@ -1,67 +1,40 @@
-"""Config flow and options flow for AlpicAir."""
+"""Config flow for AlpicAir Modbus."""
 from __future__ import annotations
+
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_NAME
-from homeassistant.helpers import selector
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
+from homeassistant.data_entry_flow import FlowResult
 
-from .const import DOMAIN, DEFAULT_NAME, DEFAULT_PORT, DEFAULT_SLAVE, CONF_SLAVE
+from .const import (
+    CONF_CONNECTION_TYPE,
+    CONNECTION_TCP,
+    DEFAULT_NAME,
+    DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_SLAVE,
+    DOMAIN,
+)
 
-# --- existing config flow with typo fixed ---
+
 class AlpicAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow."""
+
     VERSION = 1
 
-    async def async_step_user(self, user_input=None):
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(CONF_HOST): str,
-                vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-                vol.Required(CONF_SLAVE, default=DEFAULT_SLAVE): int,
-            }
-        )
+    async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            await self.async_set_unique_id(
-                f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}:{user_input[CONF_SLAVE]}"
-            )
+            await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input['slave']}")
             self._abort_if_unique_id_configured()
             return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
-        return self.async_show_form(step_id="user", data_schema=schema)
-
-
-# --- options flow: allows user to select entity_id for each image position ---
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        options = dict(self.config_entry.options or {})
-
-        # Keys should match the ones used by sensor proxy creation
-        flow_keys = [
-            "actual_supply_1",
-            "actual_supply_2",
-            "actual_supply_3",
-            "actual_supply_4",
-            "actual_extract_1",
-            "actual_extract_2",
-            "actual_extract_3",
-            "actual_extract_4",
-        ]
-
-        if user_input is not None:
-            # Save all fields at once
-            return self.async_create_entry(title="", data=user_input)
-
-        # Build schema with entity selectors for each flow position (only sensors)
-        schema_dict = {}
-        for key in flow_keys:
-            schema_dict[vol.Optional(key, default=options.get(key, ""))] = selector.selector(
-                {"entity": {"domain": "sensor"}}
-            )
-
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))
-
-
-async def async_get_options_flow(config_entry):
-    return OptionsFlowHandler(config_entry)
+        schema = vol.Schema({
+            vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
+            vol.Required(CONF_CONNECTION_TYPE, default=CONNECTION_TCP): vol.In([CONNECTION_TCP]),
+            vol.Required(CONF_HOST): str,
+            vol.Required(CONF_PORT, default=DEFAULT_PORT): vol.Coerce(int),
+            vol.Required("slave", default=DEFAULT_SLAVE): vol.All(vol.Coerce(int), vol.Range(min=1, max=247)),
+            vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+            vol.Required("address_offset", default=0): vol.In([0, 1]),
+        })
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)

@@ -1,141 +1,167 @@
-"""Coordinator for AlpicAir ventilation unit."""
+"""Modbus coordinator for AlpicAir."""
 from __future__ import annotations
-import logging
+
+import asyncio
 from datetime import timedelta
-import pymodbus
-from packaging import version
+import logging
+
 from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.exceptions import ModbusException
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from .const import *
 
-_LOGGER=logging.getLogger(__name__)
+from .const import (
+    COIL_INTENSIVE_AIR_FLOW, COIL_NIGHT_COOLING_FUNCTION, MODE_BUILDING_PROTECTION,
+    MODE_COMFORT, MODE_ECONOMY, MODE_STANDBY, REG_AIR_FLOW_1_EXTRACT,
+    REG_AIR_FLOW_1_SUPPLY, REG_AIR_FLOW_2_EXTRACT, REG_AIR_FLOW_2_SUPPLY,
+    REG_AIR_FLOW_3_EXTRACT, REG_AIR_FLOW_3_SUPPLY, REG_AIR_FLOW_4_EXTRACT,
+    REG_AIR_FLOW_4_SUPPLY, REG_ALARM_A, REG_ALARM_B, REG_BUILDING_PROTECTION_TEMPERATURE,
+    REG_COMFORT_TEMPERATURE, REG_ECONOMY_TEMPERATURE, REG_EXHAUST_TEMPERATURE,
+    REG_EXTRACT_TEMPERATURE, REG_HEAT_EXCHANGER_PRESSURE,
+    REG_NIGHT_COOLING_SETPOINT, REG_NIGHT_COOLING_START_EXTRACT,
+    REG_NIGHT_COOLING_START_HOURS, REG_NIGHT_COOLING_START_MINS,
+    REG_NIGHT_COOLING_START_OUTDOOR, REG_NIGHT_COOLING_STOP_EXTRACT,
+    REG_NIGHT_COOLING_STOP_HOURS, REG_NIGHT_COOLING_STOP_MINS, REG_OUTDOOR_TEMPERATURE,
+    REG_SUPPLY_TEMPERATURE, REG_SYSTEM_MODE,
+)
 
-def _device_kwarg()->str:
-    try:
-        return "device_id" if version.parse(pymodbus.__version__)>=version.parse("3.10.0") else "slave"
-    except Exception:
-        return "slave"
+_LOGGER = logging.getLogger(__name__)
 
-class AlpicAirCoordinator(DataUpdateCoordinator):
-    """Read/write MCB 1.27 registers without allowing optional data to break setup."""
-    def __init__(self,hass:HomeAssistant,host:str,port:int,slave:int)->None:
-        super().__init__(hass,_LOGGER,name=DOMAIN,update_interval=timedelta(seconds=15))
-        self._client=AsyncModbusTcpClient(host=host,port=port)
-        self._slave=slave
-        self._kwarg=_device_kwarg()
+REGISTERS = {
+    "system_mode": REG_SYSTEM_MODE,
+    "comfort_temperature": REG_COMFORT_TEMPERATURE,
+    "economy_temperature": REG_ECONOMY_TEMPERATURE,
+    "building_protection_temperature": REG_BUILDING_PROTECTION_TEMPERATURE,
+    "night_cooling_start_hours": REG_NIGHT_COOLING_START_HOURS,
+    "night_cooling_start_mins": REG_NIGHT_COOLING_START_MINS,
+    "night_cooling_stop_hours": REG_NIGHT_COOLING_STOP_HOURS,
+    "night_cooling_stop_mins": REG_NIGHT_COOLING_STOP_MINS,
+    "night_cooling_start_extract": REG_NIGHT_COOLING_START_EXTRACT,
+    "night_cooling_stop_extract": REG_NIGHT_COOLING_STOP_EXTRACT,
+    "night_cooling_start_outdoor": REG_NIGHT_COOLING_START_OUTDOOR,
+    "night_cooling_setpoint": REG_NIGHT_COOLING_SETPOINT,
+    "supply_air_flow_stage_1": REG_AIR_FLOW_1_SUPPLY,
+    "supply_air_flow_stage_2": REG_AIR_FLOW_2_SUPPLY,
+    "supply_air_flow_stage_3": REG_AIR_FLOW_3_SUPPLY,
+    "supply_air_flow_stage_4": REG_AIR_FLOW_4_SUPPLY,
+    "extract_air_flow_stage_1": REG_AIR_FLOW_1_EXTRACT,
+    "extract_air_flow_stage_2": REG_AIR_FLOW_2_EXTRACT,
+    "extract_air_flow_stage_3": REG_AIR_FLOW_3_EXTRACT,
+    "extract_air_flow_stage_4": REG_AIR_FLOW_4_EXTRACT,
+    "alarm_a": REG_ALARM_A,
+    "alarm_b": REG_ALARM_B,
+    "supply_temperature": REG_SUPPLY_TEMPERATURE,
+    "extract_temperature": REG_EXTRACT_TEMPERATURE,
+    "exhaust_temperature": REG_EXHAUST_TEMPERATURE,
+    "outdoor_temperature": REG_OUTDOOR_TEMPERATURE,
+    "heat_exchanger_pressure": REG_HEAT_EXCHANGER_PRESSURE,
+}
 
-    @property
-    def _kw(self)->dict:
-        return {self._kwarg:self._slave}
 
-    async def _optional_holding(self,address:int,count:int,default:list[int])->list[int]:
-        """Read optional holding data; do not fail the integration if unsupported."""
-        try:
-            response=await self._client.read_holding_registers(address=address,count=count,**self._kw)
-            if response.isError():
-                _LOGGER.debug("Optional holding registers %s-%s unavailable: %s",address,address+count-1,response)
-                return default
-            return response.registers
-        except Exception as err:
-            _LOGGER.debug("Optional holding registers %s-%s failed: %s",address,address+count-1,err)
-            return default
+class AlpicAirCoordinator(DataUpdateCoordinator[dict[str, int | bool]]):
+    """Read and write registers for one controller."""
 
-    async def _optional_input(self,address:int,count:int,default:list[int])->list[int]:
-        """Read optional input data; do not fail the integration if unsupported."""
-        try:
-            response=await self._client.read_input_registers(address=address,count=count,**self._kw)
-            if response.isError():
-                _LOGGER.debug("Optional input registers %s-%s unavailable: %s",address,address+count-1,response)
-                return default
-            return response.registers
-        except Exception as err:
-            _LOGGER.debug("Optional input registers %s-%s failed: %s",address,address+count-1,err)
-            return default
+    def __init__(self, hass: HomeAssistant, entry) -> None:
+        self.entry = entry
+        self._slave = entry.data["slave"]
+        self._offset = entry.data.get("address_offset", 0)
+        self._client = AsyncModbusTcpClient(entry.data[CONF_HOST], port=entry.data[CONF_PORT])
+        self.last_normal_mode = MODE_COMFORT
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=entry.title,
+            update_interval=timedelta(seconds=entry.data[CONF_SCAN_INTERVAL]),
+        )
 
-    async def _async_update_data(self)->dict:
+    def _address(self, documented_address: int) -> int:
+        return documented_address - self._offset
+
+    async def _connect(self) -> None:
         if not self._client.connected:
             await self._client.connect()
         if not self._client.connected:
-            raise UpdateFailed("Cannot connect to Modbus TCP device")
+            raise ConfigEntryNotReady("Cannot connect to the Modbus controller")
 
+    async def _read_register(self, address: int) -> int:
+        response = await self._client.read_holding_registers(
+            address=self._address(address), count=1, device_id=self._slave
+        )
+        if response.isError():
+            raise ModbusException(str(response))
+        return response.registers[0]
+
+    async def _async_update_data(self) -> dict[str, int | bool]:
         try:
-            # These are the stable, core user registers. A failure here means no usable connection.
-            core=await self._client.read_holding_registers(address=1,count=6,**self._kw)
-            if core.isError():
-                raise UpdateFailed(f"Modbus error reading core registers 1-6: {core}")
-            coils=await self._client.read_coils(address=3,count=6,**self._kw)
+            await self._connect()
+            data: dict[str, int | bool] = {}
+            for key, address in REGISTERS.items():
+                data[key] = await self._read_register(address)
+            coils = await self._client.read_coils(
+                address=self._address(COIL_NIGHT_COOLING_FUNCTION), count=2, device_id=self._slave
+            )
             if coils.isError():
-                raise UpdateFailed(f"Modbus error reading coils 3-8: {coils}")
-            state=await self._client.read_input_registers(address=1,count=31,**self._kw)
-            if state.isError():
-                raise UpdateFailed(f"Modbus error reading input registers 1-31: {state}")
-        except UpdateFailed:
-            raise
-        except Exception as err:
-            raise UpdateFailed(f"Modbus read failed: {err}") from err
+                raise ModbusException(str(coils))
+            data["night_cooling"] = coils.bits[0]
+            data["intensive"] = coils.bits[1]
+            if data["system_mode"] in (MODE_BUILDING_PROTECTION, MODE_ECONOMY, MODE_COMFORT):
+                self.last_normal_mode = int(data["system_mode"])
+            return data
+        except (ModbusException, OSError, asyncio.TimeoutError) as err:
+            raise UpdateFailed(f"Modbus update failed: {err}") from err
 
-        # All new configuration/diagnostic ranges are optional. Unsupported address ranges
-        # result in unavailable values for that small group, not total integration failure.
-        night=await self._optional_holding(25,8,[None]*8)
-        supply_config=await self._optional_holding(450,4,[None]*4)
-        extract_config=await self._optional_holding(456,4,[None]*4)
-        supply_flow=await self._optional_input(77,4,[None]*4)
-        extract_flow=await self._optional_input(83,4,[None]*4)
-        filter_data=await self._optional_input(112,14,[None]*14)
-
-        def signed(v):
-            return None if v is None else (v-65536 if v>32767 else v)
-        def temp(v):
-            v=signed(v)
-            return None if v is None else v/10.0
-        def scaled_percent(v):
-            return None if v is None else v/10.0
-
-        m=core.registers
-        c=coils.bits
-        s=state.registers
-        return {
-            "system_mode":m[0],
-            "comfort_setpoint":m[1]/10.0,
-            "air_flow_percent":m[2],
-            "building_protection_setpoint":m[5],
-            "dryness_protection":bool(c[0]),
-            "night_cooling_enabled":bool(c[1]),
-            "intensive_boost":bool(c[2]),
-            "full_recirc_protection":bool(c[3]),
-            "full_recirc_economy":bool(c[4]),
-            "flow_by_rh":bool(c[5]),
-            "system_state":s[0],
-            "intensive_time_left":s[12],
-            "required_supply_temp":temp(s[16]),
-            "supply_temp":temp(s[17]),
-            "extract_temp":temp(s[18]),
-            "exhaust_temp":temp(s[19]),
-            "outdoor_temp":temp(s[20]),
-            "alarm_count":s[27],
-            "filter_days_left":s[29],
-            "nc_start_hour":night[0],"nc_start_min":night[1],
-            "nc_stop_hour":night[2],"nc_stop_min":night[3],
-            "nc_start_extract_temp":temp(night[4]),"nc_stop_extract_temp":temp(night[5]),
-            "nc_stop_outdoor_temp":temp(night[6]),"nc_supply_setpoint":temp(night[7]),
-            "preset_supply_1":scaled_percent(supply_config[0]),"preset_supply_2":scaled_percent(supply_config[1]),
-            "preset_supply_3":scaled_percent(supply_config[2]),"preset_supply_4":scaled_percent(supply_config[3]),
-            "preset_extract_1":scaled_percent(extract_config[0]),"preset_extract_2":scaled_percent(extract_config[1]),
-            "preset_extract_3":scaled_percent(extract_config[2]),"preset_extract_4":scaled_percent(extract_config[3]),
-            "actual_supply_1":supply_flow[0],"actual_supply_2":supply_flow[1],"actual_supply_3":supply_flow[2],"actual_supply_4":supply_flow[3],
-            "actual_extract_1":extract_flow[0],"actual_extract_2":extract_flow[1],"actual_extract_3":extract_flow[2],"actual_extract_4":extract_flow[3],
-            "supply_filter_pressure":filter_data[0],"extract_filter_pressure":filter_data[3],"heat_exchanger_pressure":filter_data[6],"efficiency":filter_data[13],
-        }
-
-    async def write_register(self,address:int,value:int)->None:
-        result=await self._client.write_register(address,value,**self._kw)
-        if result.isError():
-            raise UpdateFailed(f"Modbus write error at holding register {address}: {result}")
+    async def async_write_register(self, documented_address: int, value: int) -> None:
+        await self._connect()
+        response = await self._client.write_register(
+            address=self._address(documented_address), value=value, device_id=self._slave
+        )
+        if response.isError():
+            raise HomeAssistantError(f"Modbus write failed: {response}")
         await self.async_request_refresh()
 
-    async def write_coil(self,address:int,value:bool)->None:
-        result=await self._client.write_coil(address,value,**self._kw)
-        if result.isError():
-            raise UpdateFailed(f"Modbus write error at coil {address}: {result}")
+    async def async_write_coil(self, documented_address: int, value: bool) -> None:
+        await self._connect()
+        response = await self._client.write_coil(
+            address=self._address(documented_address), value=value, device_id=self._slave
+        )
+        if response.isError():
+            raise HomeAssistantError(f"Modbus coil write failed: {response}")
         await self.async_request_refresh()
+
+    async def async_set_mode(self, mode: int | str) -> None:
+        if mode == "intensive":
+            await self.async_write_coil(COIL_INTENSIVE_AIR_FLOW, True)
+            return
+        await self.async_write_coil(COIL_INTENSIVE_AIR_FLOW, False)
+        await self.async_write_register(REG_SYSTEM_MODE, int(mode))
+        if mode in (MODE_BUILDING_PROTECTION, MODE_ECONOMY, MODE_COMFORT):
+            self.last_normal_mode = int(mode)
+
+    async def async_set_standby(self, enabled: bool) -> None:
+        if enabled:
+            mode = self.data.get("system_mode") if self.data else None
+            if mode in (MODE_BUILDING_PROTECTION, MODE_ECONOMY, MODE_COMFORT):
+                self.last_normal_mode = int(mode)
+            await self.async_write_coil(COIL_INTENSIVE_AIR_FLOW, False)
+            await self.async_write_register(REG_SYSTEM_MODE, MODE_STANDBY)
+        else:
+            await self.async_write_register(REG_SYSTEM_MODE, self.last_normal_mode)
+
+    def active_temperature_register(self) -> int | None:
+        mode = self.data.get("system_mode") if self.data else None
+        if mode == MODE_BUILDING_PROTECTION:
+            return REG_BUILDING_PROTECTION_TEMPERATURE
+        if mode == MODE_ECONOMY:
+            return REG_ECONOMY_TEMPERATURE
+        if mode == MODE_COMFORT:
+            return REG_COMFORT_TEMPERATURE
+        if self.last_normal_mode == MODE_BUILDING_PROTECTION:
+            return REG_BUILDING_PROTECTION_TEMPERATURE
+        if self.last_normal_mode == MODE_ECONOMY:
+            return REG_ECONOMY_TEMPERATURE
+        return REG_COMFORT_TEMPERATURE
+
+    async def async_close(self) -> None:
+        self._client.close()
